@@ -45,11 +45,6 @@ clean-outputs:
 clean-outputs:
     if (Test-Path "output") { Get-ChildItem "output" -Include "*.csv","*.duckdb","*.json","*.parquet" | Remove-Item -Force }
 
-[windows]
-clean:
-    if (Test-Path ".venv") { Remove-Item ".venv" -Recurse -Force }
-
-
 # Setup environment
 get-started: pre-install venv
 
