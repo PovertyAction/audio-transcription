@@ -30,6 +30,8 @@ update-reqs:
 # create virtual environment
 venv:
     uv sync
+    uv pip install git+https://github.com/huggingface/transformers
+    uv pip install --upgrade "mistral-common[audio]"
     uv tool install pre-commit
     uv run pre-commit install
 
@@ -89,9 +91,9 @@ pre-install:
 
 [linux]
 pre-install:
-    brew install just uv gh markdownlint-cli
+    brew install just uv gh markdownlint-cli ffmpeg
 
 [macos]
 pre-install:
-    brew install just uv gh markdownlint-cli
+    brew install just uv gh markdownlint- ffmpeg
     brew install --cask quarto

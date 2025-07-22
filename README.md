@@ -1,72 +1,157 @@
-# Python project template
+# Audio Transcription Project
 
-Template repository for a python project.
+Python project for audio transcription using machine learning models.
 
 ## Development set up
 
-Development relies on the following software
+### Prerequisites
 
-- `winget` (Windows) or `homebrew` (MacOS/Linux) or `snap` (Linux) for package management and installation
-- `git` for source control management
-- `just` for running common command line patterns
-- `uv` for installing Python and managing virtual environments
+This project requires Python 3.11 or 3.12 (not 3.13 due to dependency constraints) and the following tools:
 
-This repository uses a `Justfile` for collecting common command line actions that we run
-to set up the computing environment and build the assets of the handbook. Note that you
-should also have Git installed
+- **Python 3.11-3.12**: Required for compatibility with audio processing dependencies
+- **uv**: Modern Python package manager for dependency management
+- **just**: Command runner for common development tasks
+- **cmake**: Required for building audio processing dependencies
+- **git**: Version control
 
-To get started, make sure you have `Just` installed on your computer by running the
-following from the command line:
+### Installation
 
-| Platform  | Commands                                                            |
-| --------- | ------------------------------------------------------------------- |
-| Windows   | `winget install Git.Git Casey.Just astral-sh.uv GitHub.cli Posit.Quarto` |
-| Mac/Linux | `brew install just uv gh`                                          |
+#### 1. Install System Dependencies
 
-This will make sure that you have the latest version of `Just`, as well as
-[uv](https://docs.astral.sh/uv/) (installer for Python) and
-[Quarto](https://quarto.org/docs/guide/) (for writing and compiling scientific and
-technical documents).
+**On macOS/Linux with Homebrew:**
 
-- We use `Just` in order to make it easier for all IPA users to be productive with data
-  and technology systems. The goal of using a `Justfile` is to help make the end goal of
-  the user easier to achieve without needing to know or remember all of the technical
-  details of how we get to that goal.
-- We use `uv` to help ease use of Python. `uv` provides a global system for creating and
-  building computing environments for Python.
-- We use Quarto to allow users to focus on writing and data analytics. Writing in
-  markdown, jupyter notebooks, python scripts, R scripts, etc. makes it easier to
-  review, update, and deploy technical documentation.
-- We also recommend using in Integrated Development Environment (IDE).
-  Preferred options are `VS Code` or `Positron`.
+```bash
+brew install just uv cmake
+```
 
-| Platform  | Commands                                                            |
-| --------- | ------------------------------------------------------------------- |
-| Windows   | `winget install Microsoft.VisualStudioCode`                         |
-| Mac       | `brew install --cask visual-studio-code`                            |
-| Linux     | `sudo snap install code --classic`                                  |
+**On Windows:**
 
-| Platform  | Commands                                                            |
-| --------- | ------------------------------------------------------------------- |
-| Windows   | `winget install Posit.Positron`                                     |
-| Mac       | `brew install --cask positron`                                      |
+```bash
+winget install Casey.Just astral-sh.uv
+# Install cmake via Visual Studio Build Tools or from cmake.org
+```
 
-As a shortcut, if you already have `Just` installed, you can run the following to
-install required software and build a python virtual environment that is used to build
-the handbook pages:
+**On Linux (Ubuntu/Debian):**
+
+```bash
+# Install via Homebrew
+brew install just uv
+# Install other tools via apt
+sudo apt install cmake build-essential pkg-config
+```
+
+#### 2. Clone and Setup Project
+
+```bash
+git clone <repository-url>
+cd audio-transcription
+```
+
+#### 3. Environment Setup
+
+**Quick setup (recommended):**
 
 ```bash
 just get-started
 ```
 
-Note: you may need to restart your terminal after running the command above to activate
-the installed software.
+**Manual setup:**
 
-After the required software is installed, you can activate the Python virtual
-environment:
+```bash
+# Create virtual environment with correct Python version
+uv venv --python 3.12
+uv sync
+```
 
-| Shell      | Commands                                |
-| ---------- | --------------------------------------- |
-| Bash       | `.venv/Scripts/activate`                |
-| Powershell | `.venv/Scripts/activate.ps1`            |
-| Nushell    | `overlay use .venv/Scripts/activate.nu` |
+#### 4. Activate Environment
+
+The project uses `uv` for environment management:
+
+```bash
+# Activate the environment
+uv shell
+
+# Or run commands directly with uv
+uv run python your_script.py
+uv run jupyter lab
+```
+
+### Development Workflow
+
+Common development commands using `just`:
+
+```bash
+just lab              # Launch Jupyter Lab
+just lint-py          # Lint Python code
+just fmt-python       # Format Python code
+just fmt-all          # Format all code (Python, SQL, Markdown)
+just pre-commit-run   # Run pre-commit hooks
+```
+
+### IDE Setup
+
+**VS Code (recommended):**
+
+- Install Python extension
+- Set Python interpreter to `.venv/bin/python` (or `.venv/Scripts/python.exe` on Windows)
+- Install Jupyter extension for notebook support
+
+## Demo Notebooks
+
+The project includes demonstration notebooks showcasing different transcription models:
+
+### Available Demos
+
+- **`notebooks/demo_whisper_transcription.ipynb`**: Demonstrates audio transcription using OpenAI's Whisper model
+  - Uses the `openai/whisper-small` model for faster inference
+  - Includes interactive audio players for testing
+  - Shows transcription accuracy comparison with original text
+
+- **`notebooks/demo_voxtral_transcription.ipynb`**: Demonstrates audio transcription using Mistral's Voxtral model
+  - Uses the `mistralai/Voxtral-Mini-3B-2507` model
+  - Multilingual speech recognition capabilities
+  - Interactive audio processing with timing metrics
+
+### Running the Demos
+
+```bash
+# Launch Jupyter Lab
+just lab
+
+# Or run directly with uv
+uv run jupyter lab
+```
+
+Both notebooks include sample audio files and demonstrate:
+
+- Model loading and setup
+- Audio file processing with interactive players
+- Transcription accuracy comparison
+- Performance timing metrics
+
+### Troubleshooting
+
+**Python 3.13 Issues:**
+If you encounter errors with `sentencepiece` or other dependencies, ensure you're using Python 3.11 or 3.12:
+
+```bash
+uv python pin 3.12
+uv sync
+```
+
+**Missing cmake:**
+Audio dependencies require cmake for compilation. Install via your system package manager.
+
+**Voxtral Model Issues:**
+If you encounter issues with the Voxtral model, ensure you have the correct version of `uv` and that the model is downloaded correctly:
+
+```bash
+uv sync
+uv pip install git+https://github.com/huggingface/transformers
+uv pip install --upgrade "mistral-common[audio]"
+
+# Or shortcut
+just venv
+source .venv/bin/activate  # On Linux/macOS
+# .venv\Scripts\activate  # On Windows
+```
