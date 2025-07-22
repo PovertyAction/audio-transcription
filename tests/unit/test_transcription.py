@@ -39,7 +39,12 @@ class TestTranscriptionCore:
 
         # Call transcribe_audio
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         # Verify results
@@ -84,7 +89,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cuda", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cuda",
+            "openai/whisper-small",
+            "whisper",
         )
 
         # Verify CUDA-specific handling
@@ -114,7 +124,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         # Verify CPU handling (no dtype conversion)
@@ -132,7 +147,12 @@ class TestTranscriptionCore:
 
         with pytest.raises(Exception, match="Failed to load audio file"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -154,7 +174,12 @@ class TestTranscriptionCore:
 
         with pytest.raises(RuntimeError, match="CUDA out of memory"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cuda", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cuda",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -171,7 +196,12 @@ class TestTranscriptionCore:
 
         with pytest.raises(Exception, match="Processor failed"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -194,7 +224,12 @@ class TestTranscriptionCore:
 
         with pytest.raises(Exception, match="Decoding failed"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -216,7 +251,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         # Timing should be positive but reasonable (mocked execution should be fast)
@@ -247,7 +287,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         assert started_at == mock_start_time
@@ -276,7 +321,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         assert len(decoded_outputs) == 2
@@ -302,7 +352,12 @@ class TestTranscriptionCore:
         audio_path = Path("/fake/path/test.mp3")
 
         decoded_outputs, elapsed_time, started_at = transcribe_audio(
-            audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+            audio_path,
+            mock_processor,
+            mock_model,
+            "cpu",
+            "openai/whisper-small",
+            "whisper",
         )
 
         assert decoded_outputs == [""]

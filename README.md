@@ -1,10 +1,10 @@
 # Audio Transcription Project
 
-Python project for audio transcription using local LLMs.
+Python project for audio transcription using OpenAI Whisper and Mistral Voxtral models.
 
 ## Usage
 
-This project provides a command-line tool for transcribing audio files using OpenAI's Whisper models. You can transcribe individual files or batch process entire directories with support for multiple output formats.
+This project provides a command-line tool for transcribing audio files using OpenAI's Whisper models and Mistral's Voxtral models. You can transcribe individual files or batch process entire directories with support for multiple output formats.
 
 ### Quick Start
 
@@ -33,11 +33,13 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 **Available Options:**
 
-- `--model MODEL`: Choose the Whisper model (default: `whisper-small`)
+- `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default: `whisper-small`)
 - `--format FORMAT`: Output format for results (default: `csv`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
 
 ### Available Models
+
+#### Whisper Models (OpenAI)
 
 Choose from different Whisper models based on your speed vs accuracy needs:
 
@@ -47,6 +49,17 @@ Choose from different Whisper models based on your speed vs accuracy needs:
 | `whisper-small` | Fast model, good accuracy | ~244 MB | **Recommended default** |
 | `whisper-medium` | Balanced speed/accuracy | ~769 MB | High-quality transcription |
 | `whisper-large-v3-turbo` | Best accuracy, slower | ~1550 MB | Maximum quality needed |
+
+#### Voxtral Models (Mistral AI) - Optional
+
+For multilingual speech recognition with advanced capabilities:
+
+| Model | Description | Size | Use Case |
+|-------|-------------|------|---------|
+| `voxtral-mini` | Multilingual ASR model | ~3B params | Fast multilingual transcription |
+| `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy |
+
+> **Note**: Voxtral models require additional dependencies. See [Voxtral Setup](#voxtral-model-setup) below.
 
 ### Output Formats
 
@@ -71,11 +84,14 @@ uv run python src/transcribe_audio.py
 **Choose model and format:**
 
 ```bash
-# Use tiny model for fast processing, save as JSON
+# Use tiny Whisper model for fast processing, save as JSON
 uv run python src/transcribe_audio.py --model whisper-tiny --format json
 
-# Use large model for best quality, save to database
+# Use large Whisper model for best quality, save to database
 uv run python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb
+
+# Use Voxtral model for multilingual transcription (requires setup)
+uv run python src/transcribe_audio.py --model voxtral-mini --format json
 ```
 
 **Re-process all files:**
@@ -88,8 +104,11 @@ uv run python src/transcribe_audio.py --all-audio --format parquet
 **Production batch processing:**
 
 ```bash
-# Process large batches with balanced model
+# Process large batches with balanced Whisper model
 uv run python src/transcribe_audio.py --model whisper-medium --format duckdb
+
+# Process multilingual content with Voxtral
+uv run python src/transcribe_audio.py --model voxtral-small --format parquet --all-audio
 ```
 
 ### Input Requirements
@@ -186,6 +205,70 @@ uv run python src/transcribe_audio.py --format parquet
 # Watch processing in real-time
 uv run python src/transcribe_audio.py --model whisper-small --format json 2>&1 | tee transcription.log
 ```
+
+## Voxtral Model Setup
+
+To use Mistral's Voxtral models for multilingual speech recognition, you need to install additional dependencies.
+
+### Prerequisites for Voxtral
+
+Voxtral models require the latest development version of the `transformers` library and additional audio processing dependencies.
+
+### Installation Steps
+
+1. **Install development transformers** (required for Voxtral support):
+
+   ```bash
+   uv pip install git+https://github.com/huggingface/transformers
+   ```
+
+2. **Install Mistral audio dependencies**:
+
+   ```bash
+   uv pip install --upgrade "mistral-common[audio]"
+   ```
+
+3. **Verify installation** by checking available models:
+
+   ```bash
+   uv run python src/transcribe_audio.py --help
+   ```
+
+   You should see both Whisper and Voxtral models listed if installation was successful.
+
+### Voxtral vs Whisper Comparison
+
+| Feature | Whisper | Voxtral |
+|---------|---------|---------|
+| **Languages** | 99+ languages | Optimized for multilingual |
+| **Model Size** | 39MB - 1.5GB | 3B - 24B parameters |
+| **Speed** | Fast to moderate | Moderate to slow |
+| **Accuracy** | High for English | Very high for multilingual |
+| **Dependencies** | Standard transformers | Development transformers + mistral-common |
+| **Use Case** | General transcription | Advanced multilingual ASR |
+
+### Troubleshooting Voxtral
+
+**If Voxtral models don't appear:**
+
+- Ensure you installed the development version of transformers
+- Check that mistral-common[audio] is properly installed
+- Restart your environment after installation
+
+**If you get import errors:**
+
+```bash
+# Clean reinstall
+uv pip uninstall transformers mistral-common
+uv pip install git+https://github.com/huggingface/transformers
+uv pip install --upgrade "mistral-common[audio]"
+```
+
+**Performance considerations:**
+
+- Voxtral models require more GPU memory than Whisper
+- Use `voxtral-mini` for faster processing
+- Use `voxtral-small` only with sufficient GPU memory (>8GB recommended)
 
 ## Development set up
 

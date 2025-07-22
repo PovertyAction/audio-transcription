@@ -21,19 +21,20 @@ class TestCommandLineArgumentParsing:
         mock_get_audio.return_value = []  # No audio files to avoid full processing
         mock_cuda.return_value = False  # Force CPU device
 
-        # Mock load_whisper_model to return 3 values as expected
+        # Mock load_model to return 4 values as expected
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         return mock_processor, mock_model
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_default_arguments(
@@ -50,7 +51,7 @@ class TestCommandLineArgumentParsing:
         mock_load_model.assert_called_once_with("whisper-small", "cpu")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_with_format_argument(
@@ -67,7 +68,7 @@ class TestCommandLineArgumentParsing:
         mock_load_model.assert_called_once_with("whisper-small", "cpu")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_with_model_argument(
@@ -86,7 +87,7 @@ class TestCommandLineArgumentParsing:
         mock_load_model.assert_called_once_with("whisper-tiny", "cpu")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_with_all_audio_flag(
@@ -103,7 +104,7 @@ class TestCommandLineArgumentParsing:
         mock_load_model.assert_called_once_with("whisper-small", "cpu")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_with_combined_arguments(
@@ -186,7 +187,7 @@ class TestNotebookMode:
     """Test notebook/interactive mode functionality."""
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_notebook_mode_fallback(
@@ -198,13 +199,14 @@ class TestNotebookMode:
         mock_get_audio.return_value = []
         mock_cuda.return_value = False
 
-        # Mock load_whisper_model to return 3 values
+        # Mock load_model to return 4 values
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         # Mock argparse to raise SystemExit (simulating notebook environment)
@@ -221,7 +223,7 @@ class TestMainFunctionIntegration:
     """Test main function integration scenarios."""
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_cuda_device_detection(
@@ -233,13 +235,14 @@ class TestMainFunctionIntegration:
         mock_get_audio.return_value = []
         mock_cuda.return_value = True  # Simulate CUDA available
 
-        # Mock load_whisper_model
+        # Mock load_model
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         with patch.object(sys, "argv", ["transcribe_audio.py"]):
@@ -249,7 +252,7 @@ class TestMainFunctionIntegration:
         mock_load_model.assert_called_once_with("whisper-small", "cuda")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_cpu_device_fallback(
@@ -261,13 +264,14 @@ class TestMainFunctionIntegration:
         mock_get_audio.return_value = []
         mock_cuda.return_value = False  # Simulate CUDA not available
 
-        # Mock load_whisper_model
+        # Mock load_model
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         with patch.object(sys, "argv", ["transcribe_audio.py"]):
@@ -277,7 +281,7 @@ class TestMainFunctionIntegration:
         mock_load_model.assert_called_once_with("whisper-small", "cpu")
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     @patch("builtins.print")
@@ -290,13 +294,14 @@ class TestMainFunctionIntegration:
         mock_get_audio.return_value = []  # No audio files
         mock_cuda.return_value = False
 
-        # Mock load_whisper_model
+        # Mock load_model
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         with patch.object(sys, "argv", ["transcribe_audio.py"]):
@@ -316,7 +321,7 @@ class TestMainFunctionIntegration:
         )  # At least some output should occur
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.transcribe_audio")
     @patch("src.transcribe_audio.save_results")
     @patch("src.transcribe_audio.OUTPUT_DIR")
@@ -347,6 +352,7 @@ class TestMainFunctionIntegration:
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         # Mock transcription
@@ -374,7 +380,7 @@ class TestMainFunctionIntegration:
         assert mock_transcribe.call_count == len(audio_files)
         mock_save.assert_called_once()
 
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("torch.cuda.is_available")
     def test_main_model_loading_error(self, mock_cuda, mock_load_model):
         """Test main function handling of model loading errors."""
@@ -388,7 +394,7 @@ class TestMainFunctionIntegration:
             main()
 
     @patch("src.transcribe_audio.get_audio_files")
-    @patch("src.transcribe_audio.load_whisper_model")
+    @patch("src.transcribe_audio.load_model")
     @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_output_directory_creation(
@@ -400,13 +406,14 @@ class TestMainFunctionIntegration:
         mock_get_audio.return_value = []
         mock_cuda.return_value = False
 
-        # Mock load_whisper_model
+        # Mock load_model
         mock_processor = Mock()
         mock_model = Mock()
         mock_load_model.return_value = (
             mock_processor,
             mock_model,
             "openai/whisper-small",
+            "whisper",
         )
 
         with patch.object(sys, "argv", ["transcribe_audio.py"]):

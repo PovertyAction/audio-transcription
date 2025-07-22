@@ -109,7 +109,12 @@ class TestRealAudioFileProcessing:
 
             # Test transcription
             decoded_outputs, elapsed_time, started_at = transcribe_audio(
-                audio_file, mock_processor, mock_model, "cpu", "openai/whisper-tiny"
+                audio_file,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-tiny",
+                "whisper",
             )
 
             assert len(decoded_outputs) > 0

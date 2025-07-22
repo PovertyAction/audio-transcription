@@ -12,7 +12,21 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from transformers import (
+    WhisperForConditionalGeneration,
+    WhisperProcessor,
+)
+
+# Optional Voxtral support - only import if available
+try:
+    from transformers import AutoProcessor, VoxtralForConditionalGeneration
+
+    VOXTRAL_AVAILABLE = True
+except ImportError:
+    VOXTRAL_AVAILABLE = False
+    print(
+        "Warning: Voxtral models not available. Install latest with: uv pip install git+https://github.com/huggingface/transformers"
+    )
 
 # Constants
 MAX_NEW_TOKENS = 400  # Reduced for Whisper compatibility
@@ -28,25 +42,47 @@ OUTPUT_FORMATS = {
     "duckdb": {"extension": ".duckdb", "description": "DuckDB database format"},
 }
 
-# Available Whisper models
-WHISPER_MODELS = {
+# Available models (Whisper and optionally Voxtral)
+AVAILABLE_MODELS = {
+    # Whisper models
     "whisper-tiny": {
         "id": "openai/whisper-tiny",
-        "description": "Fastest model, least accurate (~39 MB)",
+        "type": "whisper",
+        "description": "Fastest Whisper model, least accurate (~39 MB)",
     },
     "whisper-small": {
         "id": "openai/whisper-small",
-        "description": "Fast model, good accuracy (~244 MB)",
+        "type": "whisper",
+        "description": "Fast Whisper model, good accuracy (~244 MB)",
     },
     "whisper-medium": {
         "id": "openai/whisper-medium",
-        "description": "Balanced speed/accuracy (~769 MB)",
+        "type": "whisper",
+        "description": "Balanced Whisper speed/accuracy (~769 MB)",
     },
     "whisper-large-v3-turbo": {
         "id": "openai/whisper-large-v3-turbo",
-        "description": "Best accuracy, slower (~1550 MB)",
+        "type": "whisper",
+        "description": "Best Whisper accuracy, slower (~1550 MB)",
     },
 }
+
+# Add Voxtral models if available
+if VOXTRAL_AVAILABLE:
+    AVAILABLE_MODELS.update(
+        {
+            "voxtral-mini": {
+                "id": "mistralai/Voxtral-Mini-3B-2507",
+                "type": "voxtral",
+                "description": "Voxtral Mini model for multilingual ASR (~3B params)",
+            },
+            "voxtral-small": {
+                "id": "mistralai/Voxtral-Small-24B-2507",
+                "type": "voxtral",
+                "description": "Voxtral Small model for high-quality multilingual ASR (~24B params)",
+            },
+        }
+    )
 
 
 def generate_file_id(filename: str, file_size: int) -> str:
@@ -204,51 +240,99 @@ def get_output_filename(output_format: str) -> Path:
     return OUTPUT_DIR / f"transcribed_audio{extension}"
 
 
-def load_whisper_model(model_name: str, device: str):
-    """Load the specified Whisper model."""
-    if model_name not in WHISPER_MODELS:
+def load_model(model_name: str, device: str):
+    """Load the specified model (Whisper or Voxtral)."""
+    if model_name not in AVAILABLE_MODELS:
         raise ValueError(
-            f"Unknown model: {model_name}. Available models: {list(WHISPER_MODELS.keys())}"
+            f"Unknown model: {model_name}. Available models: {list(AVAILABLE_MODELS.keys())}"
         )
 
-    model_id = WHISPER_MODELS[model_name]["id"]
-    print(f"Loading {model_name} model ({model_id})...")
-    print(f"Description: {WHISPER_MODELS[model_name]['description']}")
+    model_config = AVAILABLE_MODELS[model_name]
+    model_id = model_config["id"]
+    model_type = model_config["type"]
 
-    processor = WhisperProcessor.from_pretrained(model_id)
-    model = WhisperForConditionalGeneration.from_pretrained(
-        model_id, torch_dtype=torch.float16 if device == "cuda" else torch.float32
-    )
-    model.to(device)
+    print(f"Loading {model_name} model ({model_id})...")
+    print(f"Description: {model_config['description']}")
+    print(f"Model type: {model_type.upper()}")
+
+    if model_type == "whisper":
+        processor = WhisperProcessor.from_pretrained(model_id)
+        model = WhisperForConditionalGeneration.from_pretrained(
+            model_id, torch_dtype=torch.float16 if device == "cuda" else torch.float32
+        )
+        model.to(device)
+    elif model_type == "voxtral":
+        if not VOXTRAL_AVAILABLE:
+            raise ValueError(
+                "Voxtral models are not available. Install with: uv pip install git+https://github.com/huggingface/transformers"
+            )
+        processor = AutoProcessor.from_pretrained(model_id)
+        model = VoxtralForConditionalGeneration.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            device_map=device if device == "cuda" else None,
+        )
+        if device == "cpu":
+            model.to(device)
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
     print("Model loaded successfully!")
-    return processor, model, model_id
+    return processor, model, model_id, model_type
 
 
 # %%
-def transcribe_audio(audio_path: Path, processor, model, device, model_id: str):
+def transcribe_audio(
+    audio_path: Path, processor, model, device, model_id: str, model_type: str
+):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
     start_time = time.time()
     started_at = datetime.now(UTC)
 
-    # Load audio file
-    audio, _ = librosa.load(str(audio_path), sr=16000)
+    if model_type == "whisper":
+        # Load audio file for Whisper
+        audio, _ = librosa.load(str(audio_path), sr=16000)
 
-    # Process audio with Whisper
-    inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
-    inputs = inputs.to(device)
+        # Process audio with Whisper
+        inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
+        inputs = inputs.to(device)
 
-    # Ensure input features match model dtype
-    if device == "cuda":
-        inputs.input_features = inputs.input_features.to(torch.float16)
+        # Ensure input features match model dtype
+        if device == "cuda":
+            inputs.input_features = inputs.input_features.to(torch.float16)
 
-    # Generate transcription with smaller max length for Whisper
-    with torch.no_grad():
-        outputs = model.generate(inputs.input_features, max_new_tokens=200)
+        # Generate transcription with smaller max length for Whisper
+        with torch.no_grad():
+            outputs = model.generate(inputs.input_features, max_new_tokens=200)
+
+        decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
+
+    elif model_type == "voxtral":
+        # Process audio with Voxtral
+        inputs = processor.apply_transcrition_request(
+            language=LANGUAGE, audio=str(audio_path), model_id=model_id
+        )
+        inputs = inputs.to(device)
+
+        # Ensure input tensors match model dtype
+        if device == "cuda":
+            inputs = inputs.to(dtype=torch.bfloat16)
+
+        # Generate transcription for Voxtral
+        with torch.no_grad():
+            outputs = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
+
+        # Decode Voxtral outputs (skip input tokens)
+        decoded_outputs = processor.batch_decode(
+            outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
+        )
+
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
 
     end_time = time.time()
     elapsed_time = end_time - start_time
 
-    decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
     return decoded_outputs, elapsed_time, started_at
 
 
@@ -256,19 +340,20 @@ def transcribe_audio(audio_path: Path, processor, model, device, model_id: str):
 def main():
     """Process all audio files for transcription."""
     parser = argparse.ArgumentParser(
-        description="Transcribe audio files using Whisper model",
+        description="Transcribe audio files using Whisper or Voxtral models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Available output formats:
 {chr(10).join(f"  {fmt}: {config['description']}" for fmt, config in OUTPUT_FORMATS.items())}
 
-Available Whisper models:
-{chr(10).join(f"  {model}: {config['description']}" for model, config in WHISPER_MODELS.items())}
+Available models:
+{chr(10).join(f"  {model}: {config['description']}" for model, config in AVAILABLE_MODELS.items())}
 
 Examples:
-  python src/transcription_app.py --model whisper-tiny --format csv
-  python src/transcription_app.py --model whisper-large-v3-turbo --format duckdb --all-audio
-  python src/transcription_app.py --model whisper-medium --format parquet
+  python src/transcribe_audio.py --model whisper-tiny --format csv
+  python src/transcribe_audio.py --model voxtral-mini --format json
+  python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
+  python src/transcribe_audio.py --model voxtral-small --format parquet
         """,
     )
 
@@ -287,9 +372,9 @@ Examples:
 
     parser.add_argument(
         "--model",
-        choices=list(WHISPER_MODELS.keys()),
+        choices=list(AVAILABLE_MODELS.keys()),
         default="whisper-small",
-        help="Whisper model to use for transcription (default: whisper-small)",
+        help="Model to use for transcription: Whisper or Voxtral (default: whisper-small)",
     )
 
     # Handle both command line and notebook execution
@@ -312,7 +397,7 @@ Examples:
     print(f"Using device: {device}")
 
     # Load the specified model
-    processor, model, model_id = load_whisper_model(args.model, device)
+    processor, model, model_id, model_type = load_model(args.model, device)
 
     # Get output file path
     output_file = get_output_filename(args.format)
@@ -360,7 +445,7 @@ Examples:
 
             # Transcribe audio
             decoded_outputs, transcription_time, started_at = transcribe_audio(
-                audio_file, processor, model, device, model_id
+                audio_file, processor, model, device, model_id, model_type
             )
 
             # Combine all transcription outputs into a single text

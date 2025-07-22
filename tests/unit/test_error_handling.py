@@ -166,7 +166,12 @@ class TestTranscriptionErrors:
 
         with pytest.raises(Exception, match="Unsupported audio format"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa.load")
@@ -180,7 +185,12 @@ class TestTranscriptionErrors:
 
         with pytest.raises(Exception, match="Audio file is corrupted"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     @patch("src.transcribe_audio.librosa.load")
@@ -204,7 +214,12 @@ class TestTranscriptionErrors:
 
         with pytest.raises(Exception, match="Cannot process empty audio"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
 
@@ -291,7 +306,12 @@ class TestResourceExhaustionErrors:
 
         with pytest.raises(MemoryError, match="Insufficient memory for processing"):
             transcribe_audio(
-                audio_path, mock_processor, mock_model, "cpu", "openai/whisper-small"
+                audio_path,
+                mock_processor,
+                mock_model,
+                "cpu",
+                "openai/whisper-small",
+                "whisper",
             )
 
     def test_save_results_large_dataset_memory_error(self, temp_dir):
