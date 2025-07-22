@@ -16,8 +16,39 @@ system-info:
     @echo "Operating system: {{ os() }}"
 
 # Clean venv
+[linux]
 clean:
     rm -rf .venv
+
+# Clean venv
+[macos]
+clean:
+    rm -rf .venv
+
+# Clean venv
+[windows]
+clean:
+    if (Test-Path ".venv") { Remove-Item ".venv" -Recurse -Force }
+
+# Clean outputs
+[linux]
+clean-outputs:
+    rm -f output/*.csv output/*.duckdb output/*.json output/*.parquet
+
+# Clean outputs
+[macos]
+clean-outputs:
+    rm -f output/*.csv output/*.duckdb output/*.json output/*.parquet
+
+# Clean outputs
+[windows]
+clean-outputs:
+    if (Test-Path "output") { Get-ChildItem "output" -Include "*.csv","*.duckdb","*.json","*.parquet" | Remove-Item -Force }
+
+[windows]
+clean:
+    if (Test-Path ".venv") { Remove-Item ".venv" -Recurse -Force }
+
 
 # Setup environment
 get-started: pre-install venv
