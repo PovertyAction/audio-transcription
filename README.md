@@ -35,6 +35,8 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 - `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default: `whisper-small`)
 - `--format FORMAT`: Output format for results (default: `csv`)
+- `--language LANGUAGE`: Language code for transcription (default: `en`). Whisper supports 99 languages, Voxtral supports 8.
+- `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default: `400`). Whisper models have a maximum limit of 448 tokens.
 - `--all-audio`: Re-process all files, including previously transcribed ones
 
 ### Available Models
@@ -50,6 +52,8 @@ Choose from different Whisper models based on your speed vs accuracy needs:
 | `whisper-medium` | Balanced speed/accuracy | ~769 MB | High-quality transcription |
 | `whisper-large-v3-turbo` | Best accuracy, slower | ~1550 MB | Maximum quality needed |
 
+**Whisper Language Support**: Supports 99 languages including English, Spanish, French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO 639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`, `hi`).
+
 #### Voxtral Models (Mistral AI) - Optional
 
 For multilingual speech recognition with advanced capabilities:
@@ -58,6 +62,8 @@ For multilingual speech recognition with advanced capabilities:
 |-------|-------------|------|---------|
 | `voxtral-mini` | Multilingual ASR model | ~3B params | Fast multilingual transcription |
 | `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy |
+
+**Voxtral Language Support**: Currently supports 8 languages: English (`en`), Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`), Dutch (`nl`), and Italian (`it`).
 
 > **Note**: Voxtral models require additional dependencies. See [Voxtral Setup](#voxtral-model-setup) below.
 
@@ -94,6 +100,38 @@ uv run python src/transcribe_audio.py --model whisper-large-v3-turbo --format du
 uv run python src/transcribe_audio.py --model voxtral-mini --format json
 ```
 
+**Language-specific transcription:**
+
+```bash
+# Transcribe Spanish audio
+uv run python src/transcribe_audio.py --language es
+
+# Transcribe French audio with more tokens for detailed output
+uv run python src/transcribe_audio.py --language fr --max-new-tokens 600
+
+# Use Voxtral for German transcription
+uv run python src/transcribe_audio.py --model voxtral-mini --language de
+
+# Transcribe Hindi audio with Whisper (Voxtral also supports Hindi)
+uv run python src/transcribe_audio.py --language hi --model whisper-medium
+```
+
+**Token length control:**
+
+```bash
+# Short summaries (fewer tokens)
+uv run python src/transcribe_audio.py --max-new-tokens 200
+
+# Default length
+uv run python src/transcribe_audio.py  # Uses 400 tokens
+
+# Longer transcriptions (Whisper max is 448)
+uv run python src/transcribe_audio.py --max-new-tokens 448
+
+# Voxtral models can use more tokens
+uv run python src/transcribe_audio.py --max-new-tokens 800 --model voxtral-mini
+```
+
 **Re-process all files:**
 
 ```bash
@@ -109,6 +147,12 @@ uv run python src/transcribe_audio.py --model whisper-medium --format duckdb
 
 # Process multilingual content with Voxtral
 uv run python src/transcribe_audio.py --model voxtral-small --format parquet --all-audio
+
+# Batch process Spanish content with custom token limit
+uv run python src/transcribe_audio.py --model whisper-medium --language es --max-new-tokens 500 --format duckdb
+
+# High-quality multilingual processing
+uv run python src/transcribe_audio.py --model voxtral-small --language fr --max-new-tokens 600 --format parquet
 ```
 
 ### Input Requirements
@@ -245,12 +289,13 @@ Voxtral models require the latest development version of the `transformers` libr
 
 | Feature | Whisper | Voxtral |
 |---------|---------|---------|
-| **Languages** | 99+ languages | Optimized for multilingual |
+| **Languages** | 99+ languages | 8 languages (en, es, fr, pt, hi, de, nl, it) |
 | **Model Size** | 39MB - 1.5GB | 3B - 24B parameters |
 | **Speed** | Fast to moderate | Moderate to slow |
-| **Accuracy** | High for English | Very high for multilingual |
+| **Accuracy** | High for English | Very high for supported languages |
 | **Dependencies** | Standard transformers | Development transformers + mistral-common |
 | **Use Case** | General transcription | Advanced multilingual ASR |
+| **Token Control** | Yes (--max-new-tokens) | Yes (--max-new-tokens) |
 
 ### Troubleshooting Voxtral
 

@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,8 +30,6 @@ except ImportError:
     )
 
 # Constants
-MAX_NEW_TOKENS = 400  # Reduced for Whisper compatibility
-LANGUAGE = "en"
 AUDIO_DIR = Path(__file__).parent.parent / "audio"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
@@ -283,7 +282,14 @@ def load_model(model_name: str, device: str):
 
 # %%
 def transcribe_audio(
-    audio_path: Path, processor, model, device, model_id: str, model_type: str
+    audio_path: Path,
+    processor,
+    model,
+    device,
+    model_id: str,
+    model_type: str,
+    language: str,
+    max_new_tokens: int,
 ):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
     start_time = time.time()
@@ -301,16 +307,18 @@ def transcribe_audio(
         if device == "cuda":
             inputs.input_features = inputs.input_features.to(torch.float16)
 
-        # Generate transcription with smaller max length for Whisper
+        # Generate transcription with specified max length for Whisper
         with torch.no_grad():
-            outputs = model.generate(inputs.input_features, max_new_tokens=200)
+            outputs = model.generate(
+                inputs.input_features, max_new_tokens=max_new_tokens
+            )
 
         decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
 
     elif model_type == "voxtral":
         # Process audio with Voxtral
         inputs = processor.apply_transcrition_request(
-            language=LANGUAGE, audio=str(audio_path), model_id=model_id
+            language=language, audio=str(audio_path), model_id=model_id
         )
         inputs = inputs.to(device)
 
@@ -320,7 +328,7 @@ def transcribe_audio(
 
         # Generate transcription for Voxtral
         with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
+            outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
 
         # Decode Voxtral outputs (skip input tokens)
         decoded_outputs = processor.batch_decode(
@@ -340,7 +348,7 @@ def transcribe_audio(
 def main():
     """Process all audio files for transcription."""
     parser = argparse.ArgumentParser(
-        description="Transcribe audio files using Whisper or Voxtral models",
+        description="Transcribe audio files using Whisper or Voxtral models, store results in local data formats.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Available output formats:
@@ -377,17 +385,43 @@ Examples:
         help="Model to use for transcription: Whisper or Voxtral (default: whisper-small)",
     )
 
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="Language code for transcription (default: en). Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
+    )
+
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=400,
+        help="Maximum number of new tokens to generate (default: 400). Whisper models have a maximum limit of 448 tokens.",
+    )
+
     # Handle both command line and notebook execution
     try:
         args = parser.parse_args()
     except SystemExit:
-        # If we're in a notebook/interactive environment, create default args
+        # If --help was requested, re-raise to exit properly
+        if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help"]:
+            raise
+
+        # Otherwise, we're in a notebook/interactive environment, create default args
         class Args:
             all_audio = False
             format = "csv"
             model = "whisper-small"
+            language = "en"
+            max_new_tokens = 400
 
         args = Args()
+
+    # Validate max_new_tokens for Whisper models
+    if args.model.startswith("whisper") and args.max_new_tokens > 448:
+        print(
+            "Warning: Whisper models have a maximum token limit of 448. Setting max_new_tokens to 448."
+        )
+        args.max_new_tokens = 448
 
     # Ensure output directory exists
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -445,7 +479,14 @@ Examples:
 
             # Transcribe audio
             decoded_outputs, transcription_time, started_at = transcribe_audio(
-                audio_file, processor, model, device, model_id, model_type
+                audio_file,
+                processor,
+                model,
+                device,
+                model_id,
+                model_type,
+                args.language,
+                args.max_new_tokens,
             )
 
             # Combine all transcription outputs into a single text

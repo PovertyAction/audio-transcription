@@ -45,6 +45,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         # Verify results
@@ -95,6 +97,8 @@ class TestTranscriptionCore:
             "cuda",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         # Verify CUDA-specific handling
@@ -130,6 +134,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         # Verify CPU handling (no dtype conversion)
@@ -153,6 +159,8 @@ class TestTranscriptionCore:
                 "cpu",
                 "openai/whisper-small",
                 "whisper",
+                "en",
+                400,
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -180,6 +188,8 @@ class TestTranscriptionCore:
                 "cuda",
                 "openai/whisper-small",
                 "whisper",
+                "en",
+                400,
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -202,6 +212,8 @@ class TestTranscriptionCore:
                 "cpu",
                 "openai/whisper-small",
                 "whisper",
+                "en",
+                400,
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -230,6 +242,8 @@ class TestTranscriptionCore:
                 "cpu",
                 "openai/whisper-small",
                 "whisper",
+                "en",
+                400,
             )
 
     @patch("src.transcribe_audio.librosa")
@@ -257,6 +271,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         # Timing should be positive but reasonable (mocked execution should be fast)
@@ -293,6 +309,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         assert started_at == mock_start_time
@@ -327,6 +345,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         assert len(decoded_outputs) == 2
@@ -358,6 +378,8 @@ class TestTranscriptionCore:
             "cpu",
             "openai/whisper-small",
             "whisper",
+            "en",
+            400,
         )
 
         assert decoded_outputs == [""]

@@ -8,8 +8,8 @@ This is an audio transcription project built with Python that leverages machine 
 
 The project demonstrates transcription capabilities using two models:
 
-- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
-- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual speech recognition
+- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription (supports 99 languages)
+- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual speech recognition (supports 8 languages: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian)
 
 ## Dependencies and Environment Setup
 
@@ -19,6 +19,30 @@ The project demonstrates transcription capabilities using two models:
 - Audio processing: `accelerate>=1.9.0`, `moshi>=0.2.11`, `scipy>=1.16.0`
 - Data processing: `pandas>=2.2.3`, `polars>=1.17.1`, `duckdb>=1.1.3`
 - Notebooks: `jupyter>=1.1.1`, `jupytext>=1.17.2`, `ipykernel>=6.29.5`
+
+## Repository Management Best Practices
+
+### When Making Changes
+
+1. **Always run code quality checks** before finalizing changes:
+
+   ```bash
+   just fmt-all              # Format all code
+   just lint-py              # Check Python code
+   just pre-commit-run       # Run all pre-commit hooks
+   ```
+
+2. **Test notebook functionality** after changes:
+
+   ```bash
+   just lab                  # Launch Jupyter Lab
+   # Run both demo notebooks to ensure they work
+   ```
+
+3. **Update documentation** when adding features:
+   - Update README.md for user-facing changes
+   - Update CLAUDE.md for development guidance
+   - Document new notebooks in README.md
 
 ### Special Dependencies
 
@@ -65,6 +89,24 @@ just build-docs           # Build Quarto documentation
 # Maintenance
 just update-reqs          # Update dependencies and pre-commit
 just clean                # Remove virtual environment
+```
+
+### Transcription Command Examples
+
+```bash
+# Basic transcription with defaults (English, 400 tokens)
+uv run python src/transcribe_audio.py
+
+# Specify language for better accuracy
+uv run python src/transcribe_audio.py --language es  # Spanish
+uv run python src/transcribe_audio.py --language fr  # French
+
+# Adjust max tokens for longer/shorter transcriptions
+uv run python src/transcribe_audio.py --max-new-tokens 448  # Max for Whisper
+uv run python src/transcribe_audio.py --max-new-tokens 200  # Shorter outputs
+
+# Combined options (Voxtral supports more tokens)
+uv run python src/transcribe_audio.py --model voxtral-mini --language de --max-new-tokens 600
 ```
 
 ## Code Quality Tools
@@ -119,30 +161,6 @@ Supports Windows, macOS, and Linux with platform-specific installation commands:
 - **Windows**: Uses `winget` for package installation
 - **macOS/Linux**: Uses `brew` for package installation
 - **Linux**: Additional `apt` packages for build tools
-
-## Repository Management Best Practices
-
-### When Making Changes
-
-1. **Always run code quality checks** before committing:
-
-   ```bash
-   just fmt-all              # Format all code
-   just lint-py              # Check Python code
-   just pre-commit-run       # Run all pre-commit hooks
-   ```
-
-2. **Test notebook functionality** after changes:
-
-   ```bash
-   just lab                  # Launch Jupyter Lab
-   # Run both demo notebooks to ensure they work
-   ```
-
-3. **Update documentation** when adding features:
-   - Update README.md for user-facing changes
-   - Update CLAUDE.md for development guidance
-   - Document new notebooks in README.md
 
 ### Dependencies
 
