@@ -228,13 +228,18 @@ Voxtral models require the latest development version of the `transformers` libr
    uv pip install --upgrade "mistral-common[audio]"
    ```
 
-3. **Verify installation** by checking available models:
+3. **Activate the environment and verify installation**:
 
    ```bash
-   uv run python src/transcribe_audio.py --help
+   source .venv/bin/activate
+   python src/transcribe_audio.py --help | grep -A 10 "Available models:"
    ```
 
    You should see both Whisper and Voxtral models listed if installation was successful.
+
+   > **Important**: You must activate the virtual environment with `source .venv/bin/activate` before testing Voxtral models to ensure proper dependency resolution.
+   >
+   > **Note**: These extra installation steps may become obsolete once Voxtral models are available in a future stable release of HuggingFace transformers.
 
 ### Voxtral vs Whisper Comparison
 

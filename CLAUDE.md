@@ -25,10 +25,21 @@ The project demonstrates transcription capabilities using two models:
 The project requires special handling for Mistral's Voxtral model:
 
 ```bash
-# Required for Voxtral model support
+# Required for Voxtral model support (must be done in this order)
 uv pip install git+https://github.com/huggingface/transformers
 uv pip install --upgrade "mistral-common[audio]"
 ```
+
+**Important**: After installing these dependencies, you must activate the virtual environment before testing Voxtral models:
+
+```bash
+source .venv/bin/activate
+python src/transcribe_audio.py --help | grep -A 10 "Available models:"
+```
+
+This ensures that Voxtral models are properly recognized and available for use.
+
+> **Note**: These extra installation steps may become obsolete once Voxtral models are available in a future stable release of HuggingFace transformers. The project will automatically use the standard dependencies when Voxtral support is included in the stable release.
 
 ## Essential Commands
 
