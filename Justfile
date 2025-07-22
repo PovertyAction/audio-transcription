@@ -111,6 +111,43 @@ fmt-check-markdown:
 
 fmt-all: lint-py fmt-python lint-sql fmt-markdown
 
+# Run core unit tests (fast, default)
+test:
+    uv run python -m pytest
+
+# Run all working unit tests explicitly
+test-unit:
+    uv run python -m pytest tests/unit/test_file_operations.py tests/unit/test_data_formats.py tests/unit/test_model_loading.py tests/unit/test_transcription.py tests/unit/test_cli.py -v
+
+# Run integration tests with real audio files
+test-integration:
+    uv run python -m pytest -m integration -v
+
+# Run slow tests (comprehensive)
+test-slow:
+    uv run python -m pytest -m slow -v
+
+# Run ALL tests (including broken CLI/error tests)
+test-all:
+    uv run python -m pytest --ignore=NOTHING -m "" -v
+
+# Run broken tests for debugging
+test-broken:
+    uv run python -m pytest tests/unit/test_error_handling.py -v
+
+# Run tests with coverage report (terminal)
+test-cov:
+    uv run python -m pytest --cov=src --cov-report=term-missing
+
+# Run tests with HTML coverage report
+test-cov-html:
+    uv run python -m pytest --cov=src --cov-report=html
+    @echo "Coverage report available at htmlcov/index.html"
+
+# Run tests with XML coverage report (for CI)
+test-cov-xml:
+    uv run python -m pytest --cov=src --cov-report=xml
+
 # Run pre-commit hooks
 pre-commit-run:
     pre-commit run

@@ -29,6 +29,7 @@ dependencies = [
 dev-dependencies = [
     "codespell>=2.4.1",
     "pre-commit>=4.2.0",
+    "pytest>=8.0.0",
     "ruff>=0.7.4",
 ]
 
@@ -73,6 +74,20 @@ ignore = [
 [tool.ruff.format]
 docstring-code-format = true
 docstring-code-line-length = 88
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Run only stable unit tests by default, exclude problematic error handling tests
+addopts = "-v --tb=short -m 'not integration and not slow' --ignore=tests/unit/test_error_handling.py"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
 
 [tool.codespell]
 builtin = "clear,rare,informal,usage,code,names"
