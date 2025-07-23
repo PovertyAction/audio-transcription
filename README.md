@@ -37,6 +37,8 @@ uv run python src/transcribe_audio.py [OPTIONS]
 - `--format FORMAT`: Output format for results (default: `csv`)
 - `--language LANGUAGE`: Language code for transcription (default: `en`). Whisper supports 99 languages, Voxtral supports 8.
 - `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default: `400`). Whisper models have a maximum limit of 448 tokens.
+- `--input-path PATH`: Directory containing audio files (default: `./audio`)
+- `--output-path PATH`: Directory for output files (default: `./output`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
 
 ### Available Models
@@ -153,6 +155,12 @@ uv run python src/transcribe_audio.py --model whisper-medium --language es --max
 
 # High-quality multilingual processing
 uv run python src/transcribe_audio.py --model voxtral-small --language fr --max-new-tokens 600 --format parquet
+
+# Process files from custom directories
+uv run python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
+
+# Batch process with custom paths and settings
+uv run python src/transcribe_audio.py --input-path ~/recordings --output-path ~/transcriptions --model whisper-medium --format duckdb
 ```
 
 ### Input Requirements
@@ -167,9 +175,10 @@ uv run python src/transcribe_audio.py --model voxtral-small --language fr --max-
 
 **File Organization:**
 
-- Place audio files in the `audio/` directory
+- Place audio files in the `audio/` directory (or specify custom path with `--input-path`)
 - The script automatically discovers all supported audio files
 - Files are processed in alphabetical order
+- Results are saved to the `output/` directory (or specify custom path with `--output-path`)
 
 ### Output Structure
 

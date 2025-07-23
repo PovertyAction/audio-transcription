@@ -90,12 +90,18 @@ def generate_file_id(filename: str, file_size: int) -> str:
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
-def get_audio_files() -> list[Path]:
-    """Get all audio files from the audio directory."""
+def get_audio_files(input_dir: Path = None) -> list[Path]:
+    """Get all audio files from the specified directory."""
+    if input_dir is None:
+        input_dir = AUDIO_DIR
+
     audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
     audio_files = []
 
-    for file_path in AUDIO_DIR.iterdir():
+    if not input_dir.exists():
+        return audio_files
+
+    for file_path in input_dir.iterdir():
         if file_path.suffix.lower() in audio_extensions:
             audio_files.append(file_path)
 
@@ -233,10 +239,13 @@ def save_results(records: list[dict], output_format: str, output_file: Path) -> 
         raise ValueError(f"Unsupported output format: {output_format}")
 
 
-def get_output_filename(output_format: str) -> Path:
+def get_output_filename(output_format: str, output_dir: Path = None) -> Path:
     """Get the output filename for the specified format."""
+    if output_dir is None:
+        output_dir = OUTPUT_DIR
+
     extension = OUTPUT_FORMATS[output_format]["extension"]
-    return OUTPUT_DIR / f"transcribed_audio{extension}"
+    return output_dir / f"transcribed_audio{extension}"
 
 
 def load_model(model_name: str, device: str):
@@ -362,6 +371,8 @@ Examples:
   python src/transcribe_audio.py --model voxtral-mini --format json
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
   python src/transcribe_audio.py --model voxtral-small --format parquet
+  python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
+  python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
         """,
     )
 
@@ -398,6 +409,20 @@ Examples:
         help="Maximum number of new tokens to generate (default: 400). Whisper models have a maximum limit of 448 tokens.",
     )
 
+    parser.add_argument(
+        "--input-path",
+        type=Path,
+        default=Path(__file__).parent.parent / "audio",
+        help="Path to directory containing audio files (default: ./audio)",
+    )
+
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=Path(__file__).parent.parent / "output",
+        help="Path to directory for output files (default: ./output)",
+    )
+
     # Handle both command line and notebook execution
     try:
         args = parser.parse_args()
@@ -413,6 +438,8 @@ Examples:
             model = "whisper-small"
             language = "en"
             max_new_tokens = 400
+            input_path = Path(__file__).parent.parent / "audio"
+            output_path = Path(__file__).parent.parent / "output"
 
         args = Args()
 
@@ -424,7 +451,7 @@ Examples:
         args.max_new_tokens = 448
 
     # Ensure output directory exists
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    args.output_path.mkdir(parents=True, exist_ok=True)
 
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -434,19 +461,19 @@ Examples:
     processor, model, model_id, model_type = load_model(args.model, device)
 
     # Get output file path
-    output_file = get_output_filename(args.format)
+    output_file = get_output_filename(args.format, args.output_path)
     print(
         f"Output format: {args.format} ({OUTPUT_FORMATS[args.format]['description']})"
     )
     print(f"Output file: {output_file}")
 
     # Get all audio files
-    audio_files = get_audio_files()
+    audio_files = get_audio_files(args.input_path)
     if not audio_files:
-        print(f"No audio files found in {AUDIO_DIR}")
+        print(f"No audio files found in {args.input_path}")
         return
 
-    print(f"Found {len(audio_files)} audio files in {AUDIO_DIR}")
+    print(f"Found {len(audio_files)} audio files in {args.input_path}")
 
     # Load existing results to avoid re-processing
     if not args.all_audio:

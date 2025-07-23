@@ -353,6 +353,103 @@ class TestCommandLineArgumentParsing:
         ):
             main()
 
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_custom_input_path(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom input path."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        with patch.object(
+            sys, "argv", ["transcribe_audio.py", "--input-path", "/custom/input"]
+        ):
+            main()
+
+        # Verify get_audio_files was called with custom path
+        mock_get_audio.assert_called_once_with(Path("/custom/input"))
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.get_output_filename")
+    @patch("torch.cuda.is_available")
+    def test_custom_output_path(
+        self, mock_cuda, mock_get_output, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom output path."""
+        # Setup mocks
+        mock_cuda.return_value = False
+        mock_get_audio.return_value = []
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-small",
+            "whisper",
+        )
+        mock_get_output.return_value = Path("/custom/output/transcribed_audio.csv")
+
+        with (
+            patch.object(
+                sys, "argv", ["transcribe_audio.py", "--output-path", "/custom/output"]
+            ),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            main()
+
+        # Verify get_output_filename was called with custom path
+        mock_get_output.assert_called_once_with("csv", Path("/custom/output"))
+        # Verify mkdir was called with the correct path
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.get_output_filename")
+    @patch("torch.cuda.is_available")
+    def test_custom_input_and_output_paths(
+        self, mock_cuda, mock_get_output, mock_load_model, mock_get_audio
+    ):
+        """Test main function with both custom input and output paths."""
+        # Setup mocks
+        mock_cuda.return_value = False
+        mock_get_audio.return_value = []
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-small",
+            "whisper",
+        )
+        mock_get_output.return_value = Path("/custom/output/transcribed_audio.json")
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "transcribe_audio.py",
+                    "--input-path",
+                    "/custom/input",
+                    "--output-path",
+                    "/custom/output",
+                    "--format",
+                    "json",
+                ],
+            ),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            main()
+
+        # Verify both functions were called with custom paths
+        mock_get_audio.assert_called_once_with(Path("/custom/input"))
+        mock_get_output.assert_called_once_with("json", Path("/custom/output"))
+        # Verify mkdir was called
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
 
 class TestNotebookMode:
     """Test notebook/interactive mode functionality."""
@@ -566,14 +663,12 @@ class TestMainFunctionIntegration:
 
     @patch("src.transcribe_audio.get_audio_files")
     @patch("src.transcribe_audio.load_model")
-    @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_output_directory_creation(
-        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+        self, mock_cuda, mock_load_model, mock_get_audio
     ):
         """Test that main function creates output directory."""
         # Setup mocks
-        mock_output_dir.mkdir = Mock()
         mock_get_audio.return_value = []
         mock_cuda.return_value = False
 
@@ -587,11 +682,14 @@ class TestMainFunctionIntegration:
             "whisper",
         )
 
-        with patch.object(sys, "argv", ["transcribe_audio.py"]):
+        # Mock the Path.mkdir method
+        with (
+            patch.object(sys, "argv", ["transcribe_audio.py"]),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
             main()
-
-        # Should create output directory
-        mock_output_dir.mkdir.assert_called_once_with(exist_ok=True)
+            # Should create output directory with parents=True and exist_ok=True
+            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
 
     @patch("src.transcribe_audio.get_audio_files")
     @patch("src.transcribe_audio.load_model")

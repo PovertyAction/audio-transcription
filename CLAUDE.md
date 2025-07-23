@@ -75,6 +75,10 @@ just get-started          # Install software and create venv
 just venv                 # Create/sync virtual environment
 just activate-venv        # Activate environment (uv shell)
 
+# Transcription with custom paths
+python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
+python src/transcribe_audio.py --input-path ~/recordings --output-path ~/transcriptions
+
 # Development workflow
 just lab                  # Launch Jupyter Lab
 just lint-py              # Lint Python code with ruff
@@ -107,6 +111,10 @@ uv run python src/transcribe_audio.py --max-new-tokens 200  # Shorter outputs
 
 # Combined options (Voxtral supports more tokens)
 uv run python src/transcribe_audio.py --model voxtral-mini --language de --max-new-tokens 600
+
+# Custom input and output directories
+uv run python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
+uv run python src/transcribe_audio.py --input-path ~/my-recordings --output-path ~/transcription-output --model whisper-medium
 ```
 
 ## Code Quality Tools
@@ -131,9 +139,11 @@ The project uses comprehensive pre-commit hooks:
 
 ```markdown
 audio-transcription/
-├── audio/                     # Audio files for transcription demos
+├── audio/                     # Default audio files directory (configurable with --input-path)
 │   ├── README.md             # Sources and descriptions
 │   └── *.mp3                 # Sample audio files from HuggingFace datasets
+├── output/                   # Default output directory (configurable with --output-path)
+│   └── transcribed_audio.*   # Transcription results in various formats
 ├── notebooks/                # Demonstration notebooks
 │   ├── demo_whisper_transcription.ipynb    # Whisper model demo
 │   ├── demo_voxtral_transcription.ipynb    # Voxtral model demo
