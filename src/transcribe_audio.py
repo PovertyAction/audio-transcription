@@ -2,6 +2,8 @@
 import argparse
 import hashlib
 import json
+import logging
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +14,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from transformers import (
     WhisperForConditionalGeneration,
     WhisperProcessor,
@@ -29,8 +34,6 @@ except ImportError:
     )
 
 # Constants
-MAX_NEW_TOKENS = 400  # Reduced for Whisper compatibility
-LANGUAGE = "en"
 AUDIO_DIR = Path(__file__).parent.parent / "audio"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
@@ -91,12 +94,18 @@ def generate_file_id(filename: str, file_size: int) -> str:
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
-def get_audio_files() -> list[Path]:
-    """Get all audio files from the audio directory."""
+def get_audio_files(input_dir: Path = None) -> list[Path]:
+    """Get all audio files from the specified directory."""
+    if input_dir is None:
+        input_dir = AUDIO_DIR
+
     audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
     audio_files = []
 
-    for file_path in AUDIO_DIR.iterdir():
+    if not input_dir.exists():
+        return audio_files
+
+    for file_path in input_dir.iterdir():
         if file_path.suffix.lower() in audio_extensions:
             audio_files.append(file_path)
 
@@ -234,10 +243,13 @@ def save_results(records: list[dict], output_format: str, output_file: Path) -> 
         raise ValueError(f"Unsupported output format: {output_format}")
 
 
-def get_output_filename(output_format: str) -> Path:
+def get_output_filename(output_format: str, output_dir: Path = None) -> Path:
     """Get the output filename for the specified format."""
+    if output_dir is None:
+        output_dir = OUTPUT_DIR
+
     extension = OUTPUT_FORMATS[output_format]["extension"]
-    return OUTPUT_DIR / f"transcribed_audio{extension}"
+    return output_dir / f"transcribed_audio{extension}"
 
 
 def load_model(model_name: str, device: str):
@@ -281,9 +293,113 @@ def load_model(model_name: str, device: str):
     return processor, model, model_id, model_type
 
 
+def setup_logging(output_dir: Path) -> logging.Logger:
+    """Set up logging to file in the output directory."""
+    log_file = output_dir / "transcription.log"
+
+    # Create logger
+    logger = logging.getLogger("transcription")
+    logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    logger.handlers.clear()
+
+    # Create file handler
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+
+    # Add handler to logger
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+def log_run_summary(
+    logger: logging.Logger,
+    command_args: str,
+    start_time: datetime,
+    end_time: datetime,
+    total_files: int,
+    processed_files: int,
+    skipped_files: int,
+    total_transcription_time: float,
+) -> None:
+    """Log a summary of the transcription run."""
+    total_runtime = (end_time - start_time).total_seconds()
+
+    logger.info("=== TRANSCRIPTION RUN SUMMARY ===")
+    logger.info(f"Command: {command_args}")
+    logger.info(f"Start time: {start_time.isoformat()}")
+    logger.info(f"End time: {end_time.isoformat()}")
+    logger.info(f"Total runtime: {total_runtime:.2f} seconds")
+    logger.info(f"Total audio files found: {total_files}")
+    logger.info(f"Files processed: {processed_files}")
+    logger.info(f"Files skipped (already transcribed): {skipped_files}")
+    logger.info(f"Total transcription time: {total_transcription_time:.2f} seconds")
+    if processed_files > 0:
+        logger.info(
+            f"Average transcription time per file: {total_transcription_time / processed_files:.2f} seconds"
+        )
+    logger.info("=" * 40)
+
+
+def display_rich_summary(
+    command_args: str,
+    start_time: datetime,
+    end_time: datetime,
+    total_files: int,
+    processed_files: int,
+    skipped_files: int,
+    total_transcription_time: float,
+) -> None:
+    """Display a rich formatted summary of the transcription run."""
+    console = Console()
+
+    total_runtime = (end_time - start_time).total_seconds()
+
+    # Create summary table
+    table = Table(
+        title="Transcription Run Summary", show_header=True, header_style="bold magenta"
+    )
+    table.add_column("Metric", style="cyan", no_wrap=True)
+    table.add_column("Value", style="green")
+
+    table.add_row("Command", command_args)
+    table.add_row("Start Time", start_time.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    table.add_row("End Time", end_time.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    table.add_row("Total Runtime", f"{total_runtime:.2f} seconds")
+    table.add_row("Audio Files Found", str(total_files))
+    table.add_row("Files Processed", str(processed_files))
+    table.add_row("Files Skipped", str(skipped_files))
+    table.add_row("Total Transcription Time", f"{total_transcription_time:.2f} seconds")
+
+    if processed_files > 0:
+        avg_time = total_transcription_time / processed_files
+        table.add_row("Avg Time per File", f"{avg_time:.2f} seconds")
+
+    # Display in a panel
+    panel = Panel(table, title="🎤 Audio Transcription Complete", border_style="blue")
+    console.print("\n")
+    console.print(panel)
+    console.print("\n")
+
+
 # %%
 def transcribe_audio(
-    audio_path: Path, processor, model, device, model_id: str, model_type: str
+    audio_path: Path,
+    processor,
+    model,
+    device,
+    model_id: str,
+    model_type: str,
+    language: str,
+    max_new_tokens: int,
 ):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
     start_time = time.time()
@@ -291,7 +407,7 @@ def transcribe_audio(
 
     if model_type == "whisper":
         # Load audio file for Whisper
-        audio, _ = librosa.load(str(audio_path), sr=16000)
+        audio, _ = librosa.load(audio_path, sr=16000)
 
         # Process audio with Whisper
         inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
@@ -301,17 +417,39 @@ def transcribe_audio(
         if device == "cuda":
             inputs.input_features = inputs.input_features.to(torch.float16)
 
-        # Generate transcription with smaller max length for Whisper
+        # Generate transcription with specified max length for Whisper
         with torch.no_grad():
-            outputs = model.generate(inputs.input_features, max_new_tokens=200)
+            outputs = model.generate(
+                inputs.input_features, max_new_tokens=max_new_tokens
+            )
 
         decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
 
     elif model_type == "voxtral":
-        # Process audio with Voxtral
-        inputs = processor.apply_transcrition_request(
-            language=LANGUAGE, audio=str(audio_path), model_id=model_id
-        )
+        # For Voxtral, we need to load audio with librosa first, then save as temp WAV file
+        # because Voxtral's processor expects a file path but can't handle M4A directly
+        import tempfile
+
+        # Load audio using librosa (handles M4A files)
+        audio_data, sample_rate = librosa.load(audio_path, sr=16000)
+
+        # Create temporary WAV file for Voxtral
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            import soundfile as sf
+
+            sf.write(temp_file.name, audio_data, sample_rate)
+            temp_audio_path = temp_file.name
+
+        try:
+            # Process audio with Voxtral using temporary WAV file
+            inputs = processor.apply_transcrition_request(
+                language=language, audio=temp_audio_path, model_id=model_id
+            )
+        finally:
+            # Clean up temporary file
+            import os
+
+            os.unlink(temp_audio_path)
         inputs = inputs.to(device)
 
         # Ensure input tensors match model dtype
@@ -320,7 +458,7 @@ def transcribe_audio(
 
         # Generate transcription for Voxtral
         with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
+            outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
 
         # Decode Voxtral outputs (skip input tokens)
         decoded_outputs = processor.batch_decode(
@@ -339,8 +477,11 @@ def transcribe_audio(
 # %%
 def main():
     """Process all audio files for transcription."""
+    # Record start time for logging
+    run_start_time = datetime.now(UTC)
+
     parser = argparse.ArgumentParser(
-        description="Transcribe audio files using Whisper or Voxtral models",
+        description="Transcribe audio files using Whisper or Voxtral models, store results in local data formats.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Available output formats:
@@ -354,6 +495,8 @@ Examples:
   python src/transcribe_audio.py --model voxtral-mini --format json
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
   python src/transcribe_audio.py --model voxtral-small --format parquet
+  python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
+  python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
         """,
     )
 
@@ -377,20 +520,68 @@ Examples:
         help="Model to use for transcription: Whisper or Voxtral (default: whisper-small)",
     )
 
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="Language code for transcription (default: en). Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
+    )
+
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=400,
+        help="Maximum number of new tokens to generate (default: 400). Whisper models have a maximum limit of 448 tokens.",
+    )
+
+    parser.add_argument(
+        "--input-path",
+        type=Path,
+        default=Path(__file__).parent.parent / "audio",
+        help="Path to directory containing audio files (default: ./audio)",
+    )
+
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=Path(__file__).parent.parent / "output",
+        help="Path to directory for output files (default: ./output)",
+    )
+
     # Handle both command line and notebook execution
     try:
         args = parser.parse_args()
     except SystemExit:
-        # If we're in a notebook/interactive environment, create default args
+        # If --help was requested, re-raise to exit properly
+        if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help"]:
+            raise
+
+        # Otherwise, we're in a notebook/interactive environment, create default args
         class Args:
             all_audio = False
             format = "csv"
             model = "whisper-small"
+            language = "en"
+            max_new_tokens = 400
+            input_path = Path(__file__).parent.parent / "audio"
+            output_path = Path(__file__).parent.parent / "output"
 
         args = Args()
 
+    # Validate max_new_tokens for Whisper models
+    if args.model.startswith("whisper") and args.max_new_tokens > 448:
+        print(
+            "Warning: Whisper models have a maximum token limit of 448. Setting max_new_tokens to 448."
+        )
+        args.max_new_tokens = 448
+
     # Ensure output directory exists
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    args.output_path.mkdir(parents=True, exist_ok=True)
+
+    # Set up logging
+    logger = setup_logging(args.output_path)
+
+    # Build command string for logging
+    command_args = " ".join(sys.argv)
 
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -400,19 +591,19 @@ Examples:
     processor, model, model_id, model_type = load_model(args.model, device)
 
     # Get output file path
-    output_file = get_output_filename(args.format)
+    output_file = get_output_filename(args.format, args.output_path)
     print(
         f"Output format: {args.format} ({OUTPUT_FORMATS[args.format]['description']})"
     )
     print(f"Output file: {output_file}")
 
     # Get all audio files
-    audio_files = get_audio_files()
+    audio_files = get_audio_files(args.input_path)
     if not audio_files:
-        print(f"No audio files found in {AUDIO_DIR}")
+        print(f"No audio files found in {args.input_path}")
         return
 
-    print(f"Found {len(audio_files)} audio files in {AUDIO_DIR}")
+    print(f"Found {len(audio_files)} audio files in {args.input_path}")
 
     # Load existing results to avoid re-processing
     if not args.all_audio:
@@ -426,6 +617,7 @@ Examples:
     processed_count = 0
     skipped_count = 0
     new_records = []
+    total_transcription_time = 0.0
 
     for audio_file in audio_files:
         filename = audio_file.name
@@ -445,7 +637,14 @@ Examples:
 
             # Transcribe audio
             decoded_outputs, transcription_time, started_at = transcribe_audio(
-                audio_file, processor, model, device, model_id, model_type
+                audio_file,
+                processor,
+                model,
+                device,
+                model_id,
+                model_type,
+                args.language,
+                args.max_new_tokens,
             )
 
             # Combine all transcription outputs into a single text
@@ -470,6 +669,7 @@ Examples:
             )
             new_records.append(record)
             processed_count += 1
+            total_transcription_time += transcription_time
 
         except Exception as e:
             print(f"Error processing {filename}: {e}")
@@ -519,6 +719,32 @@ Examples:
 
     except Exception as e:
         print(f"Warning: Could not display summary statistics: {e}")
+
+    # Record end time and display/log summary
+    run_end_time = datetime.now(UTC)
+
+    # Display rich formatted summary
+    display_rich_summary(
+        command_args,
+        run_start_time,
+        run_end_time,
+        len(audio_files),
+        processed_count,
+        skipped_count,
+        total_transcription_time,
+    )
+
+    # Log summary to file
+    log_run_summary(
+        logger,
+        command_args,
+        run_start_time,
+        run_end_time,
+        len(audio_files),
+        processed_count,
+        skipped_count,
+        total_transcription_time,
+    )
 
 
 # %%

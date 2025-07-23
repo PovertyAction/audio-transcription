@@ -131,6 +131,74 @@ class TestCommandLineArgumentParsing:
         # Verify arguments were used
         mock_load_model.assert_called_once_with("whisper-medium", "cpu")
 
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_main_with_language_default(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with default language argument."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Mock sys.argv with no language argument (should use default)
+        with patch.object(sys, "argv", ["transcribe_audio.py"]):
+            main()
+
+        # Default language should be "en"
+        mock_load_model.assert_called_once_with("whisper-small", "cpu")
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_main_with_language_custom(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom language argument."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Mock sys.argv with custom language
+        with patch.object(sys, "argv", ["transcribe_audio.py", "--language", "es"]):
+            main()
+
+        mock_load_model.assert_called_once_with("whisper-small", "cpu")
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_main_with_max_new_tokens_default(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with default max_new_tokens argument."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Mock sys.argv with no max-new-tokens argument (should use default)
+        with patch.object(sys, "argv", ["transcribe_audio.py"]):
+            main()
+
+        # Default max_new_tokens should be 400
+        mock_load_model.assert_called_once_with("whisper-small", "cpu")
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_main_with_max_new_tokens_custom(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom max_new_tokens argument."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Mock sys.argv with custom max-new-tokens
+        with patch.object(
+            sys, "argv", ["transcribe_audio.py", "--max-new-tokens", "600"]
+        ):
+            main()
+
+        mock_load_model.assert_called_once_with("whisper-small", "cpu")
+
     @patch("builtins.print")
     def test_argument_parser_help_contains_formats(self, mock_print):
         """Test that help text contains available formats."""
@@ -181,6 +249,206 @@ class TestCommandLineArgumentParsing:
             main()
             # Should exit with error code (may be called multiple times)
             assert mock_exit.called
+
+    def test_invalid_max_new_tokens_argument(self):
+        """Test handling of invalid max_new_tokens argument."""
+        with (
+            patch.object(
+                sys, "argv", ["transcribe_audio.py", "--max-new-tokens", "not-a-number"]
+            ),
+            patch("sys.stderr", new=StringIO()),
+            patch("sys.exit") as mock_exit,
+        ):
+            main()
+            # Should exit with error code due to type conversion error
+            assert mock_exit.called
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    @patch("builtins.print")
+    def test_whisper_max_tokens_validation(
+        self, mock_print, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test that Whisper models enforce max token limit of 448."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Mock sys.argv with token count exceeding Whisper limit
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "transcribe_audio.py",
+                "--model",
+                "whisper-small",
+                "--max-new-tokens",
+                "600",
+            ],
+        ):
+            main()
+
+        # Check that warning was printed
+        warning_printed = any(
+            "Warning: Whisper models have a maximum token limit of 448" in str(call)
+            for call in mock_print.call_args_list
+        )
+        assert warning_printed
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    @patch("builtins.print")
+    def test_voxtral_allows_high_token_count(
+        self, mock_print, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test that Voxtral models allow token counts above 448."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        # Return voxtral model type
+        mock_load_model.return_value = (
+            Mock(),
+            Mock(),
+            "mistralai/Voxtral-Mini-3B-2507",
+            "voxtral",
+        )
+
+        # Mock sys.argv with high token count for Voxtral
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "transcribe_audio.py",
+                "--model",
+                "voxtral-mini",
+                "--max-new-tokens",
+                "800",
+            ],
+        ):
+            main()
+
+        # Check that NO warning was printed about token limit
+        warning_printed = any(
+            "Warning: Whisper models have a maximum token limit" in str(call)
+            for call in mock_print.call_args_list
+        )
+        assert not warning_printed
+
+    def test_help_flag_exits_without_processing(self):
+        """Test that --help flag exits without running transcription."""
+        with (
+            patch.object(sys, "argv", ["transcribe_audio.py", "--help"]),
+            patch("sys.stderr", new=StringIO()),
+            pytest.raises(SystemExit),
+        ):
+            main()
+
+    def test_short_help_flag_exits_without_processing(self):
+        """Test that -h flag exits without running transcription."""
+        with (
+            patch.object(sys, "argv", ["transcribe_audio.py", "-h"]),
+            patch("sys.stderr", new=StringIO()),
+            pytest.raises(SystemExit),
+        ):
+            main()
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_custom_input_path(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom input path."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        with patch.object(
+            sys, "argv", ["transcribe_audio.py", "--input-path", "/custom/input"]
+        ):
+            main()
+
+        # Verify get_audio_files was called with custom path
+        mock_get_audio.assert_called_once_with(Path("/custom/input"))
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.get_output_filename")
+    @patch("torch.cuda.is_available")
+    def test_custom_output_path(
+        self, mock_cuda, mock_get_output, mock_load_model, mock_get_audio
+    ):
+        """Test main function with custom output path."""
+        # Setup mocks
+        mock_cuda.return_value = False
+        mock_get_audio.return_value = []
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-small",
+            "whisper",
+        )
+        mock_get_output.return_value = Path("/custom/output/transcribed_audio.csv")
+
+        with (
+            patch.object(
+                sys, "argv", ["transcribe_audio.py", "--output-path", "/custom/output"]
+            ),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            main()
+
+        # Verify get_output_filename was called with custom path
+        mock_get_output.assert_called_once_with("csv", Path("/custom/output"))
+        # Verify mkdir was called with the correct path
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.get_output_filename")
+    @patch("torch.cuda.is_available")
+    def test_custom_input_and_output_paths(
+        self, mock_cuda, mock_get_output, mock_load_model, mock_get_audio
+    ):
+        """Test main function with both custom input and output paths."""
+        # Setup mocks
+        mock_cuda.return_value = False
+        mock_get_audio.return_value = []
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-small",
+            "whisper",
+        )
+        mock_get_output.return_value = Path("/custom/output/transcribed_audio.json")
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "transcribe_audio.py",
+                    "--input-path",
+                    "/custom/input",
+                    "--output-path",
+                    "/custom/output",
+                    "--format",
+                    "json",
+                ],
+            ),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            main()
+
+        # Verify both functions were called with custom paths
+        mock_get_audio.assert_called_once_with(Path("/custom/input"))
+        mock_get_output.assert_called_once_with("json", Path("/custom/output"))
+        # Verify mkdir was called
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
 
 class TestNotebookMode:
@@ -395,14 +663,12 @@ class TestMainFunctionIntegration:
 
     @patch("src.transcribe_audio.get_audio_files")
     @patch("src.transcribe_audio.load_model")
-    @patch("src.transcribe_audio.OUTPUT_DIR")
     @patch("torch.cuda.is_available")
     def test_main_output_directory_creation(
-        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+        self, mock_cuda, mock_load_model, mock_get_audio
     ):
         """Test that main function creates output directory."""
         # Setup mocks
-        mock_output_dir.mkdir = Mock()
         mock_get_audio.return_value = []
         mock_cuda.return_value = False
 
@@ -416,8 +682,153 @@ class TestMainFunctionIntegration:
             "whisper",
         )
 
-        with patch.object(sys, "argv", ["transcribe_audio.py"]):
+        # Mock the Path.mkdir method
+        with (
+            patch.object(sys, "argv", ["transcribe_audio.py"]),
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            main()
+            # Should create output directory with parents=True and exist_ok=True
+            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.transcribe_audio")
+    @patch("src.transcribe_audio.save_results")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_language_and_max_tokens_passed_to_transcribe(
+        self,
+        mock_cuda,
+        mock_output_dir,
+        mock_save,
+        mock_transcribe,
+        mock_load_model,
+        mock_get_audio,
+    ):
+        """Test that language and max_new_tokens arguments are passed to transcribe_audio."""
+        # Setup mocks
+        mock_output_dir.mkdir = Mock()
+        mock_output_dir.__truediv__ = lambda self, other: Path("/tmp") / other
+        mock_cuda.return_value = False
+
+        # Mock a single audio file
+        audio_files = [Path("test.mp3")]
+        mock_get_audio.return_value = audio_files
+
+        # Mock model loading
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-small",
+            "whisper",
+        )
+
+        # Mock transcription
+        from datetime import UTC, datetime
+
+        mock_transcribe.return_value = (
+            ["Test transcription"],
+            2.5,
+            datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+        # Mock file operations
+        with (
+            patch("src.transcribe_audio.get_file_size") as mock_file_size,
+            patch("src.transcribe_audio.load_existing_results") as mock_load_results,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "transcribe_audio.py",
+                    "--language",
+                    "fr",
+                    "--max-new-tokens",
+                    "800",
+                ],
+            ),
+        ):
+            mock_file_size.return_value = 1024
+            mock_load_results.return_value = set()
             main()
 
-        # Should create output directory
-        mock_output_dir.mkdir.assert_called_once_with(exist_ok=True)
+        # Verify transcribe_audio was called with correct arguments
+        mock_transcribe.assert_called_once()
+        call_args = mock_transcribe.call_args
+        # Check that the language and max_new_tokens arguments are passed
+        assert call_args[0][4] == "openai/whisper-small"  # model_id
+        assert call_args[0][5] == "whisper"  # model_type
+        assert call_args[0][6] == "fr"  # language
+        assert call_args[0][7] == 448  # max_new_tokens (capped at Whisper limit)
+
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.transcribe_audio")
+    @patch("src.transcribe_audio.save_results")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_whisper_token_limit_enforced(
+        self,
+        mock_cuda,
+        mock_output_dir,
+        mock_save,
+        mock_transcribe,
+        mock_load_model,
+        mock_get_audio,
+    ):
+        """Test that Whisper models cap max_new_tokens at 448."""
+        # Setup mocks
+        mock_output_dir.mkdir = Mock()
+        mock_output_dir.__truediv__ = lambda self, other: Path("/tmp") / other
+        mock_cuda.return_value = False
+
+        # Mock a single audio file
+        audio_files = [Path("test.mp3")]
+        mock_get_audio.return_value = audio_files
+
+        # Mock model loading
+        mock_processor = Mock()
+        mock_model = Mock()
+        mock_load_model.return_value = (
+            mock_processor,
+            mock_model,
+            "openai/whisper-medium",
+            "whisper",
+        )
+
+        # Mock transcription
+        from datetime import UTC, datetime
+
+        mock_transcribe.return_value = (
+            ["Test transcription"],
+            2.5,
+            datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+        # Mock file operations
+        with (
+            patch("src.transcribe_audio.get_file_size") as mock_file_size,
+            patch("src.transcribe_audio.load_existing_results") as mock_load_results,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "transcribe_audio.py",
+                    "--model",
+                    "whisper-medium",
+                    "--max-new-tokens",
+                    "1000",  # Exceeds limit
+                ],
+            ),
+        ):
+            mock_file_size.return_value = 1024
+            mock_load_results.return_value = set()
+            main()
+
+        # Verify transcribe_audio was called with capped token count
+        mock_transcribe.assert_called_once()
+        call_args = mock_transcribe.call_args
+        assert call_args[0][7] == 448  # max_new_tokens should be capped at 448
