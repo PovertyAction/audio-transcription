@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import logging
 import sys
 import time
 from datetime import UTC, datetime
@@ -13,6 +14,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from transformers import (
     WhisperForConditionalGeneration,
     WhisperProcessor,
@@ -289,6 +293,103 @@ def load_model(model_name: str, device: str):
     return processor, model, model_id, model_type
 
 
+def setup_logging(output_dir: Path) -> logging.Logger:
+    """Set up logging to file in the output directory."""
+    log_file = output_dir / "transcription.log"
+
+    # Create logger
+    logger = logging.getLogger("transcription")
+    logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    logger.handlers.clear()
+
+    # Create file handler
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+
+    # Add handler to logger
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+def log_run_summary(
+    logger: logging.Logger,
+    command_args: str,
+    start_time: datetime,
+    end_time: datetime,
+    total_files: int,
+    processed_files: int,
+    skipped_files: int,
+    total_transcription_time: float,
+) -> None:
+    """Log a summary of the transcription run."""
+    total_runtime = (end_time - start_time).total_seconds()
+
+    logger.info("=== TRANSCRIPTION RUN SUMMARY ===")
+    logger.info(f"Command: {command_args}")
+    logger.info(f"Start time: {start_time.isoformat()}")
+    logger.info(f"End time: {end_time.isoformat()}")
+    logger.info(f"Total runtime: {total_runtime:.2f} seconds")
+    logger.info(f"Total audio files found: {total_files}")
+    logger.info(f"Files processed: {processed_files}")
+    logger.info(f"Files skipped (already transcribed): {skipped_files}")
+    logger.info(f"Total transcription time: {total_transcription_time:.2f} seconds")
+    if processed_files > 0:
+        logger.info(
+            f"Average transcription time per file: {total_transcription_time / processed_files:.2f} seconds"
+        )
+    logger.info("=" * 40)
+
+
+def display_rich_summary(
+    command_args: str,
+    start_time: datetime,
+    end_time: datetime,
+    total_files: int,
+    processed_files: int,
+    skipped_files: int,
+    total_transcription_time: float,
+) -> None:
+    """Display a rich formatted summary of the transcription run."""
+    console = Console()
+
+    total_runtime = (end_time - start_time).total_seconds()
+
+    # Create summary table
+    table = Table(
+        title="Transcription Run Summary", show_header=True, header_style="bold magenta"
+    )
+    table.add_column("Metric", style="cyan", no_wrap=True)
+    table.add_column("Value", style="green")
+
+    table.add_row("Command", command_args)
+    table.add_row("Start Time", start_time.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    table.add_row("End Time", end_time.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    table.add_row("Total Runtime", f"{total_runtime:.2f} seconds")
+    table.add_row("Audio Files Found", str(total_files))
+    table.add_row("Files Processed", str(processed_files))
+    table.add_row("Files Skipped", str(skipped_files))
+    table.add_row("Total Transcription Time", f"{total_transcription_time:.2f} seconds")
+
+    if processed_files > 0:
+        avg_time = total_transcription_time / processed_files
+        table.add_row("Avg Time per File", f"{avg_time:.2f} seconds")
+
+    # Display in a panel
+    panel = Panel(table, title="🎤 Audio Transcription Complete", border_style="blue")
+    console.print("\n")
+    console.print(panel)
+    console.print("\n")
+
+
 # %%
 def transcribe_audio(
     audio_path: Path,
@@ -306,7 +407,7 @@ def transcribe_audio(
 
     if model_type == "whisper":
         # Load audio file for Whisper
-        audio, _ = librosa.load(str(audio_path), sr=16000)
+        audio, _ = librosa.load(audio_path, sr=16000)
 
         # Process audio with Whisper
         inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
@@ -325,10 +426,30 @@ def transcribe_audio(
         decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
 
     elif model_type == "voxtral":
-        # Process audio with Voxtral
-        inputs = processor.apply_transcrition_request(
-            language=language, audio=str(audio_path), model_id=model_id
-        )
+        # For Voxtral, we need to load audio with librosa first, then save as temp WAV file
+        # because Voxtral's processor expects a file path but can't handle M4A directly
+        import tempfile
+
+        # Load audio using librosa (handles M4A files)
+        audio_data, sample_rate = librosa.load(audio_path, sr=16000)
+
+        # Create temporary WAV file for Voxtral
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            import soundfile as sf
+
+            sf.write(temp_file.name, audio_data, sample_rate)
+            temp_audio_path = temp_file.name
+
+        try:
+            # Process audio with Voxtral using temporary WAV file
+            inputs = processor.apply_transcrition_request(
+                language=language, audio=temp_audio_path, model_id=model_id
+            )
+        finally:
+            # Clean up temporary file
+            import os
+
+            os.unlink(temp_audio_path)
         inputs = inputs.to(device)
 
         # Ensure input tensors match model dtype
@@ -356,6 +477,9 @@ def transcribe_audio(
 # %%
 def main():
     """Process all audio files for transcription."""
+    # Record start time for logging
+    run_start_time = datetime.now(UTC)
+
     parser = argparse.ArgumentParser(
         description="Transcribe audio files using Whisper or Voxtral models, store results in local data formats.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -453,6 +577,12 @@ Examples:
     # Ensure output directory exists
     args.output_path.mkdir(parents=True, exist_ok=True)
 
+    # Set up logging
+    logger = setup_logging(args.output_path)
+
+    # Build command string for logging
+    command_args = " ".join(sys.argv)
+
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
@@ -487,6 +617,7 @@ Examples:
     processed_count = 0
     skipped_count = 0
     new_records = []
+    total_transcription_time = 0.0
 
     for audio_file in audio_files:
         filename = audio_file.name
@@ -538,6 +669,7 @@ Examples:
             )
             new_records.append(record)
             processed_count += 1
+            total_transcription_time += transcription_time
 
         except Exception as e:
             print(f"Error processing {filename}: {e}")
@@ -587,6 +719,32 @@ Examples:
 
     except Exception as e:
         print(f"Warning: Could not display summary statistics: {e}")
+
+    # Record end time and display/log summary
+    run_end_time = datetime.now(UTC)
+
+    # Display rich formatted summary
+    display_rich_summary(
+        command_args,
+        run_start_time,
+        run_end_time,
+        len(audio_files),
+        processed_count,
+        skipped_count,
+        total_transcription_time,
+    )
+
+    # Log summary to file
+    log_run_summary(
+        logger,
+        command_args,
+        run_start_time,
+        run_end_time,
+        len(audio_files),
+        processed_count,
+        skipped_count,
+        total_transcription_time,
+    )
 
 
 # %%
