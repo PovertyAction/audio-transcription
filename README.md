@@ -43,6 +43,26 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 ### Available Models
 
+### Adding New Models
+
+All models are defined in `src/transcribe_audio.py` under the `AVAILABLE_MODELS` dictionary. You can add new models by following the existing format.
+
+```python
+AVAILABLE_MODELS = {
+    "new-model-tagname": { # e.g., "whisper-small"
+        "id": "source/new-model-id",  # HuggingFace model ID
+        "type": "sourcetype",  # e.g. "whisper" or "voxtral"
+        "description": "short description of the model",  # e.g., "Fast Whisper model, good accuracy"
+    },
+    "whisper-tiny": {
+        "id": "openai/whisper-tiny",
+        "type": "whisper",
+        "description": "Fastest Whisper model, least accurate (~39 MB)",
+    },
+}
+
+```
+
 #### Whisper Models (OpenAI)
 
 Choose from different Whisper models based on your speed vs accuracy needs:
@@ -50,9 +70,10 @@ Choose from different Whisper models based on your speed vs accuracy needs:
 | Model | Description | Size | Use Case |
 |-------|-------------|------|----------|
 | `whisper-tiny` | Fastest model, least accurate | ~39 MB | Quick testing, real-time |
-| `whisper-small` | Fast model, good accuracy | ~244 MB | **Recommended default** |
+| `whisper-small` | Fast model, good accuracy | ~244 MB | **Recommended default for testing** |
 | `whisper-medium` | Balanced speed/accuracy | ~769 MB | High-quality transcription |
-| `whisper-large-v3-turbo` | Best accuracy, slower | ~1550 MB | Maximum quality needed |
+| `whisper-large-v3-turbo` | Best accuracy, slower | ~1550 MB | Best accuracy/speed tradeoff **Recommended default for project transcription** |
+| `whisper-large-v3` | Best accuracy, much slower | ~1550 MB | Maximum quality needed |
 
 **Whisper Language Support**: Supports 99 languages including English, Spanish, French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO 639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`, `hi`).
 
