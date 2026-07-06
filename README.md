@@ -79,6 +79,27 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 ### Available Models
 
+### Adding New Models
+
+All models are defined in `src/transcribe_audio.py` under the `AVAILABLE_MODELS`
+dictionary. You can add new models by following the existing format.
+
+```python
+AVAILABLE_MODELS = {
+    "new-model-tagname": { # e.g., "whisper-small"
+        "id": "source/new-model-id",  # HuggingFace model ID
+        "type": "sourcetype",  # e.g. "whisper" or "voxtral"
+        "description": "short description of the model",  # e.g., "Fast Whisper model, good accuracy"
+    },
+    "whisper-tiny": {
+        "id": "openai/whisper-tiny",
+        "type": "whisper",
+        "description": "Fastest Whisper model, least accurate (~39 MB)",
+    },
+}
+
+```
+
 #### Whisper Models (OpenAI)
 
 Choose from different Whisper models based on your speed vs accuracy needs:

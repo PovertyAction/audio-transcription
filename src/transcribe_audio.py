@@ -30,7 +30,8 @@ try:
 except ImportError:
     VOXTRAL_AVAILABLE = False
     print(
-        "Warning: Voxtral models not available. Install latest with: uv pip install git+https://github.com/huggingface/transformers"
+        "Warning: Voxtral models not available. Run 'uv sync' to install "
+        "transformers >=4.54."
     )
 
 # Constants
@@ -508,6 +509,7 @@ Examples:
   python src/transcribe_audio.py --model whisper-tiny --format csv
   python src/transcribe_audio.py --model voxtral-mini --format json
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
+  python src/transcribe_audio.py --model whisper-large-v3 --format duckdb --all-audio --language en
   python src/transcribe_audio.py --model voxtral-small --format parquet
   python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
   python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
