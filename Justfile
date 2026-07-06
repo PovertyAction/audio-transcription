@@ -50,23 +50,22 @@ get-started: pre-install venv
 
 # Update project software versions in requirements
 update-reqs:
-    uv lock
+    uv lock --upgrade
     pre-commit autoupdate
 
 # create virtual environment
 venv:
     uv sync
-    uv pip install git+https://github.com/huggingface/transformers
-    uv pip install --upgrade "mistral-common[audio]"
     uv tool install pre-commit
     uv run pre-commit install
-
-activate-venv:
-    uv shell
 
 # launch jupyter lab
 lab:
     uv run jupyter lab
+
+# launch the Streamlit transcription app
+app:
+    uv run streamlit run src/app.py
 
 # Preview the quarto project
 preview-docs:
@@ -149,14 +148,12 @@ pre-commit-run:
 
 [windows]
 pre-install:
-    winget install Casey.Just astral-sh.uv GitHub.cli Posit.Quarto OpenJS.NodeJS
-    npm install -g markdownlint-cli
+    winget install Casey.Just astral-sh.uv GitHub.cli Gyan.FFmpeg
 
 [linux]
 pre-install:
-    brew install just uv gh markdownlint-cli ffmpeg
+    brew install just uv gh ffmpeg
 
 [macos]
 pre-install:
-    brew install just uv gh markdownlint- ffmpeg
-    brew install --cask quarto
+    brew install just uv gh ffmpeg

@@ -14,6 +14,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "jupytext>=1.17.2",
     "librosa>=0.11.0",
+    "mistral-common[audio]>=1.11.5",
     "moshi>=0.2.11",
     "pandas>=2.2.3",
     "polars>=1.17.1",
@@ -22,19 +23,15 @@ dependencies = [
     "scipy>=1.16.0",
     "seaborn>=0.13.2",
     "soundfile>=0.13.1",
+    "streamlit>=1.59.0",
     "torch>=2.7.1",
     "torchaudio>=2.7.1",
     "transformers>=4.53.2",
 ]
 
 
-[tool.uv]
-dev-dependencies = [
-    "codespell>=2.4.1",
-    "pre-commit>=4.2.0",
-    "pytest>=8.0.0",
-    "ruff>=0.7.4",
-]
+[dependency-groups]
+dev = ["codespell>=2.4.1", "pre-commit>=4.2.0", "pytest>=8.0.0", "ruff>=0.7.4"]
 
 [tool.ruff]
 line-length = 88
