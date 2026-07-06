@@ -1,14 +1,19 @@
 # Audio Transcription Project
 
-Python project for audio transcription using OpenAI Whisper and Mistral Voxtral models.
+Python project for audio transcription using OpenAI Whisper and Mistral Voxtral
+models.
 
 ## Usage
 
-This project provides a command-line tool for transcribing audio files using OpenAI's Whisper models and Mistral's Voxtral models. You can transcribe individual files or batch process entire directories with support for multiple output formats.
+This project provides a command-line tool for transcribing audio files using
+OpenAI's Whisper models and Mistral's Voxtral models. You can transcribe
+individual files or batch process entire directories with support for multiple
+output formats.
 
 ### Quick Start
 
-After setting up the environment (see [Development setup](#development-set-up) below):
+After setting up the environment (see [Development setup](#development-set-up)
+below):
 
 ```bash
 # Activate the environment
@@ -33,52 +38,83 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 **Available Options:**
 
-- `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default: `whisper-small`)
+- `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default:
+  `whisper-small`)
 - `--format FORMAT`: Output format for results (default: `csv`)
-- `--language LANGUAGE`: Language code for transcription (default: `en`). Whisper supports 99 languages, Voxtral supports 8.
-- `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default: `400`). Whisper models have a maximum limit of 448 tokens.
+- `--language LANGUAGE`: Language code for transcription (default: `en`).
+  Whisper supports 99 languages, Voxtral supports 8.
+- `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default:
+  `400`). Whisper models have a maximum limit of 448 tokens.
 - `--input-path PATH`: Directory containing audio files (default: `./audio`)
 - `--output-path PATH`: Directory for output files (default: `./output`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
 
 ### Available Models
 
+### Adding New Models
+
+All models are defined in `src/transcribe_audio.py` under the `AVAILABLE_MODELS`
+dictionary. You can add new models by following the existing format.
+
+```python
+AVAILABLE_MODELS = {
+    "new-model-tagname": { # e.g., "whisper-small"
+        "id": "source/new-model-id",  # HuggingFace model ID
+        "type": "sourcetype",  # e.g. "whisper" or "voxtral"
+        "description": "short description of the model",  # e.g., "Fast Whisper model, good accuracy"
+    },
+    "whisper-tiny": {
+        "id": "openai/whisper-tiny",
+        "type": "whisper",
+        "description": "Fastest Whisper model, least accurate (~39 MB)",
+    },
+}
+
+```
+
 #### Whisper Models (OpenAI)
 
 Choose from different Whisper models based on your speed vs accuracy needs:
 
-| Model | Description | Size | Use Case |
-|-------|-------------|------|----------|
-| `whisper-tiny` | Fastest model, least accurate | ~39 MB | Quick testing, real-time |
-| `whisper-small` | Fast model, good accuracy | ~244 MB | **Recommended default** |
-| `whisper-medium` | Balanced speed/accuracy | ~769 MB | High-quality transcription |
-| `whisper-large-v3-turbo` | Best accuracy, slower | ~1550 MB | Maximum quality needed |
+  | Model                    | Description                   | Size     | Use Case                                                                       |
+  | ------------------------ | ----------------------------- | -------- | ------------------------------------------------------------------------------ |
+  | `whisper-tiny`           | Fastest model, least accurate | ~39 MB   | Quick testing, real-time                                                       |
+  | `whisper-small`          | Fast model, good accuracy     | ~244 MB  | **Recommended default for testing**                                            |
+  | `whisper-medium`         | Balanced speed/accuracy       | ~769 MB  | High-quality transcription                                                     |
+  | `whisper-large-v3-turbo` | Best accuracy, slower         | ~1550 MB | Best accuracy/speed tradeoff **Recommended default for project transcription** |
+  | `whisper-large-v3`       | Best accuracy, much slower    | ~1550 MB | Maximum quality needed                                                         |
 
-**Whisper Language Support**: Supports 99 languages including English, Spanish, French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO 639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`, `hi`).
+**Whisper Language Support**: Supports 99 languages including English, Spanish,
+French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO
+639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`,
+`hi`).
 
 #### Voxtral Models (Mistral AI) - Optional
 
 For multilingual speech recognition with advanced capabilities:
 
-| Model | Description | Size | Use Case |
-|-------|-------------|------|---------|
-| `voxtral-mini` | Multilingual ASR model | ~3B params | Fast multilingual transcription |
-| `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy |
+  | Model           | Description                   | Size        | Use Case                        |
+  | --------------- | ----------------------------- | ----------- | ------------------------------- |
+  | `voxtral-mini`  | Multilingual ASR model        | ~3B params  | Fast multilingual transcription |
+  | `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy      |
 
-**Voxtral Language Support**: Currently supports 8 languages: English (`en`), Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`), Dutch (`nl`), and Italian (`it`).
+**Voxtral Language Support**: Currently supports 8 languages: English (`en`),
+Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`),
+Dutch (`nl`), and Italian (`it`).
 
-> **Note**: Voxtral models require additional dependencies. See [Voxtral Setup](#voxtral-model-setup) below.
+> **Note**: Voxtral models require additional dependencies. See [Voxtral
+> Setup](#voxtral-model-setup) below.
 
 ### Output Formats
 
 Save your transcriptions in multiple formats:
 
-| Format | Extension | Description | Best For |
-|--------|-----------|-------------|----------|
-| `csv` | `.csv` | Comma-separated values | Excel, data analysis |
-| `json` | `.json` | JavaScript Object Notation | Web applications, APIs |
-| `parquet` | `.parquet` | Apache Parquet columnar | Big data, analytics |
-| `duckdb` | `.duckdb` | DuckDB database | SQL queries, complex analysis |
+  | Format    | Extension  | Description                | Best For                      |
+  | --------- | ---------- | -------------------------- | ----------------------------- |
+  | `csv`     | `.csv`     | Comma-separated values     | Excel, data analysis          |
+  | `json`    | `.json`    | JavaScript Object Notation | Web applications, APIs        |
+  | `parquet` | `.parquet` | Apache Parquet columnar    | Big data, analytics           |
+  | `duckdb`  | `.duckdb`  | DuckDB database            | SQL queries, complex analysis |
 
 ### Usage Examples
 
@@ -175,10 +211,12 @@ uv run python src/transcribe_audio.py --input-path ~/recordings --output-path ~/
 
 **File Organization:**
 
-- Place audio files in the `audio/` directory (or specify custom path with `--input-path`)
+- Place audio files in the `audio/` directory (or specify custom path with
+  `--input-path`)
 - The script automatically discovers all supported audio files
 - Files are processed in alphabetical order
-- Results are saved to the `output/` directory (or specify custom path with `--output-path`)
+- Results are saved to the `output/` directory (or specify custom path with
+  `--output-path`)
 
 ### Output Structure
 
@@ -209,8 +247,8 @@ a1b2c3d4e5f6g7h8,sample.mp3,1048576,2.34,"Hello world, this is a test recording.
 
 **Processing Speed Examples:**
 
-- **CPU**: ~5-10x real-time (10 second audio = 50-100 seconds processing)
-- **GPU**: ~20-50x real-time (10 second audio = 5-20 seconds processing)
+- **CPU**: \~5-10x real-time (10 second audio = 50-100 seconds processing)
+- **GPU**: \~20-50x real-time (10 second audio = 5-20 seconds processing)
 - Actual speed varies by model size and hardware
 
 ### Incremental Processing
@@ -261,11 +299,13 @@ uv run python src/transcribe_audio.py --model whisper-small --format json 2>&1 |
 
 ## Voxtral Model Setup
 
-To use Mistral's Voxtral models for multilingual speech recognition, you need to install additional dependencies.
+To use Mistral's Voxtral models for multilingual speech recognition, you need to
+install additional dependencies.
 
 ### Prerequisites for Voxtral
 
-Voxtral models require the latest development version of the `transformers` library and additional audio processing dependencies.
+Voxtral models require the latest development version of the `transformers`
+library and additional audio processing dependencies.
 
 ### Installation Steps
 
@@ -288,23 +328,28 @@ Voxtral models require the latest development version of the `transformers` libr
    python src/transcribe_audio.py --help | grep -A 10 "Available models:"
    ```
 
-   You should see both Whisper and Voxtral models listed if installation was successful.
+   You should see both Whisper and Voxtral models listed if installation was
+   successful.
 
-   > **Important**: You must activate the virtual environment with `source .venv/bin/activate` before testing Voxtral models to ensure proper dependency resolution.
+   > **Important**: You must activate the virtual environment with
+   > `source .venv/bin/activate` before testing Voxtral models to ensure proper
+   > dependency resolution.
    >
-   > **Note**: These extra installation steps may become obsolete once Voxtral models are available in a future stable release of HuggingFace transformers.
+   > **Note**: These extra installation steps may become obsolete once Voxtral
+   > models are available in a future stable release of HuggingFace
+   > transformers.
 
 ### Voxtral vs Whisper Comparison
 
-| Feature | Whisper | Voxtral |
-|---------|---------|---------|
-| **Languages** | 99+ languages | 8 languages (en, es, fr, pt, hi, de, nl, it) |
-| **Model Size** | 39MB - 1.5GB | 3B - 24B parameters |
-| **Speed** | Fast to moderate | Moderate to slow |
-| **Accuracy** | High for English | Very high for supported languages |
-| **Dependencies** | Standard transformers | Development transformers + mistral-common |
-| **Use Case** | General transcription | Advanced multilingual ASR |
-| **Token Control** | Yes (--max-new-tokens) | Yes (--max-new-tokens) |
+  | Feature           | Whisper                | Voxtral                                      |
+  | ----------------- | ---------------------- | -------------------------------------------- |
+  | **Languages**     | 99+ languages          | 8 languages (en, es, fr, pt, hi, de, nl, it) |
+  | **Model Size**    | 39MB - 1.5GB           | 3B - 24B parameters                          |
+  | **Speed**         | Fast to moderate       | Moderate to slow                             |
+  | **Accuracy**      | High for English       | Very high for supported languages            |
+  | **Dependencies**  | Standard transformers  | Development transformers + mistral-common    |
+  | **Use Case**      | General transcription  | Advanced multilingual ASR                    |
+  | **Token Control** | Yes (--max-new-tokens) | Yes (--max-new-tokens)                       |
 
 ### Troubleshooting Voxtral
 
@@ -333,9 +378,11 @@ uv pip install --upgrade "mistral-common[audio]"
 
 ### Prerequisites
 
-This project requires Python 3.11 or 3.12 (not 3.13 due to dependency constraints) and the following tools:
+This project requires Python 3.11 or 3.12 (not 3.13 due to dependency
+constraints) and the following tools:
 
-- **Python 3.11-3.12**: Required for compatibility with audio processing dependencies
+- **Python 3.11-3.12**: Required for compatibility with audio processing
+  dependencies
 - **uv**: Modern Python package manager for dependency management
 - **just**: Command runner for common development tasks
 - **cmake**: Required for building audio processing dependencies
@@ -419,7 +466,8 @@ just test-cov         # Run tests with coverage report
 
 ## Testing
 
-This project includes a comprehensive test suite with 74 passing tests that validate all aspects of the audio transcription functionality.
+This project includes a comprehensive test suite with 74 passing tests that
+validate all aspects of the audio transcription functionality.
 
 ### Test Structure
 
@@ -485,11 +533,14 @@ just test-cov-xml
 
 **✅ Working Tests (74 tests):**
 
-- **File Operations** (12 tests): File ID generation, audio discovery, file sizes
-- **Data Formats** (22 tests): Save/load operations for CSV, JSON, Parquet, DuckDB
+- **File Operations** (12 tests): File ID generation, audio discovery, file
+  sizes
+- **Data Formats** (22 tests): Save/load operations for CSV, JSON, Parquet,
+  DuckDB
 - **Model Loading** (13 tests): Whisper model validation, device handling
 - **Transcription Core** (11 tests): Audio processing with mocked models
-- **CLI Interface** (16 tests): Command-line argument parsing and workflow integration
+- **CLI Interface** (16 tests): Command-line argument parsing and workflow
+  integration
 
 **⚠️ Broken Tests (3 tests):**
 
@@ -498,8 +549,11 @@ just test-cov-xml
 ### Adding Real Audio Files for Integration Testing
 
 1. **Place audio files** in `tests/assets/audio/`
+
 2. **Keep files small** (< 1MB each, 1-30 seconds duration)
+
 3. **Document sources** in `tests/assets/README.md`
+
 4. **Run integration tests:**
 
    ```bash
@@ -510,9 +564,10 @@ Integration tests will skip gracefully if no audio files are present.
 
 ### Test Design Principles
 
-- **Fast by default**: Core tests run in ~6 seconds using mocks
+- **Fast by default**: Core tests run in \~6 seconds using mocks
 - **No model downloads**: Uses mocked ML models to avoid heavy downloads
-- **Graceful skipping**: Integration tests skip when real audio files unavailable
+- **Graceful skipping**: Integration tests skip when real audio files
+  unavailable
 - **Comprehensive coverage**: Tests all output formats and error scenarios
 - **CI-ready**: Provides detailed coverage reports for continuous integration
 
@@ -538,7 +593,8 @@ just pre-commit-run
 
 ### Pre-commit Hooks
 
-The project uses comprehensive pre-commit hooks that run automatically before each commit:
+The project uses comprehensive pre-commit hooks that run automatically before
+each commit:
 
 - **File validation**: YAML, JSON, TOML syntax checking
 - **Python validation**: `validate-pyproject` for pyproject.toml
@@ -574,22 +630,26 @@ just update-reqs
 **VS Code (recommended):**
 
 - Install Python extension
-- Set Python interpreter to `.venv/bin/python` (or `.venv/Scripts/python.exe` on Windows)
+- Set Python interpreter to `.venv/bin/python` (or `.venv/Scripts/python.exe` on
+  Windows)
 - Install Jupyter extension for notebook support
 - Install Python Test Explorer for integrated test running
 
 ## Demo Notebooks
 
-The project includes demonstration notebooks showcasing different transcription models:
+The project includes demonstration notebooks showcasing different transcription
+models:
 
 ### Available Demos
 
-- **`notebooks/demo_whisper_transcription.ipynb`**: Demonstrates audio transcription using OpenAI's Whisper model
+- **`notebooks/demo_whisper_transcription.ipynb`**: Demonstrates audio
+  transcription using OpenAI's Whisper model
   - Uses the `openai/whisper-small` model for faster inference
   - Includes interactive audio players for testing
   - Shows transcription accuracy comparison with original text
 
-- **`notebooks/demo_voxtral_transcription.ipynb`**: Demonstrates audio transcription using Mistral's Voxtral model
+- **`notebooks/demo_voxtral_transcription.ipynb`**: Demonstrates audio
+  transcription using Mistral's Voxtral model
   - Uses the `mistralai/Voxtral-Mini-3B-2507` model
   - Multilingual speech recognition capabilities
   - Interactive audio processing with timing metrics
@@ -675,19 +735,19 @@ When adding new functionality:
 
 ### Troubleshooting
 
-**Python 3.13 Issues:**
-If you encounter errors with `sentencepiece` or other dependencies, ensure you're using Python 3.11 or 3.12:
+**Python 3.13 Issues:** If you encounter errors with `sentencepiece` or other
+dependencies, ensure you're using Python 3.11 or 3.12:
 
 ```bash
 uv python pin 3.12
 uv sync
 ```
 
-**Missing cmake:**
-Audio dependencies require cmake for compilation. Install via your system package manager.
+**Missing cmake:** Audio dependencies require cmake for compilation. Install via
+your system package manager.
 
-**Voxtral Model Issues:**
-If you encounter issues with the Voxtral model, ensure you have the correct version of `uv` and that the model is downloaded correctly:
+**Voxtral Model Issues:** If you encounter issues with the Voxtral model, ensure
+you have the correct version of `uv` and that the model is downloaded correctly:
 
 ```bash
 uv sync

@@ -50,7 +50,7 @@ get-started: pre-install venv
 
 # Update project software versions in requirements
 update-reqs:
-    uv lock
+    uv lock --upgrade
     pre-commit autoupdate
 
 # create virtual environment
@@ -61,20 +61,10 @@ venv:
     uv tool install pre-commit
     uv run pre-commit install
 
-activate-venv:
-    uv shell
 
 # launch jupyter lab
 lab:
     uv run jupyter lab
-
-# Preview the quarto project
-preview-docs:
-    quarto preview
-
-# Build the quarto project
-build-docs:
-    quarto render
 
 # Lint python code
 lint-py:
@@ -94,17 +84,25 @@ lint-sql:
 
 # Format all markdown and config files
 fmt-markdown:
-    uv run mdformat .
+    uv run panache format .
 
 # Format a single markdown file, "f"
 fmt-md f:
-    uv run mdformat {{ f }}
+    uv run panache format {{ f }}
 
 # Check format of all markdown files
 fmt-check-markdown:
-    uv run mdformat --check .
+    uv run panache format --check .
 
-fmt-all: lint-py fmt-python lint-sql fmt-markdown
+# Lint all markdown files for semantic issues
+lint-markdown:
+    uv run panache lint .
+
+# Lint a single markdown file, "f"
+lint-md f:
+    uv run panache lint {{ f }}
+
+fmt-all: lint-py fmt-python lint-sql fmt-markdown lint-markdown
 
 # Run core unit tests (fast, default)
 test:
@@ -149,14 +147,12 @@ pre-commit-run:
 
 [windows]
 pre-install:
-    winget install Casey.Just astral-sh.uv GitHub.cli Posit.Quarto OpenJS.NodeJS
-    npm install -g markdownlint-cli
+    winget install Casey.Just astral-sh.uv GitHub.cli
 
 [linux]
 pre-install:
-    brew install just uv gh markdownlint-cli ffmpeg
+    brew install just uv gh ffmpeg
 
 [macos]
 pre-install:
-    brew install just uv gh markdownlint- ffmpeg
-    brew install --cask quarto
+    brew install just uv gh ffmpeg

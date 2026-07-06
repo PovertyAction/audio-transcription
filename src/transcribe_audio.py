@@ -68,6 +68,11 @@ AVAILABLE_MODELS = {
         "type": "whisper",
         "description": "Best Whisper accuracy, slower (~1550 MB)",
     },
+    "whisper-large-v3": {
+        "id": "openai/whisper-large-v3",
+        "type": "whisper",
+        "description": "Best Whisper accuracy, much slower",
+    },
 }
 
 # Add Voxtral models if available
@@ -402,7 +407,7 @@ def transcribe_audio(
     max_new_tokens: int,
 ):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
-    start_time = time.time()
+    start_time = time.perf_counter()
     started_at = datetime.now(UTC)
 
     if model_type == "whisper":
@@ -468,7 +473,7 @@ def transcribe_audio(
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    end_time = time.time()
+    end_time = time.perf_counter()
     elapsed_time = end_time - start_time
 
     return decoded_outputs, elapsed_time, started_at
@@ -494,6 +499,7 @@ Examples:
   python src/transcribe_audio.py --model whisper-tiny --format csv
   python src/transcribe_audio.py --model voxtral-mini --format json
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
+  python src/transcribe_audio.py --model whisper-large-v3 --format duckdb --all-audio --language en
   python src/transcribe_audio.py --model voxtral-small --format parquet
   python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
   python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
