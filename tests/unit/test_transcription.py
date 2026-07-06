@@ -59,7 +59,10 @@ class TestTranscriptionCore:
         # Verify mocks were called correctly
         mock_librosa.load.assert_called_once_with(audio_path, sr=16000)
         mock_processor.assert_called_once_with(
-            mock_audio_data, sampling_rate=16000, return_tensors="pt"
+            mock_audio_data,
+            sampling_rate=16000,
+            return_tensors="pt",
+            return_attention_mask=True,
         )
         mock_model.generate.assert_called_once()
         # Just verify that batch_decode was called with correct arguments structure

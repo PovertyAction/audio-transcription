@@ -246,11 +246,27 @@ a1b2c3d4e5f6g7h8,sample.mp3,1048576,2.34,"Hello world, this is a test recording.
 
 ### Performance and GPU Support
 
+**GPU-enabled PyTorch:**
+
+On Windows and Linux, the project installs CUDA-enabled PyTorch wheels (CUDA
+12.8) from the official PyTorch index, so an NVIDIA GPU is used automatically
+when present. On machines without an NVIDIA GPU the same wheels fall back to
+CPU. macOS uses the standard PyPI wheels.
+
+To check whether the GPU is visible to PyTorch:
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
 **Automatic Device Detection:**
 
 - Uses CUDA GPU if available for faster processing
 - Falls back to CPU automatically
 - Model precision adjusted based on device (float16 for GPU, float32 for CPU)
+- In the web app, the sidebar's **Compute device** selector lets you choose
+  Auto, CPU, or GPU (the GPU option appears only when a CUDA GPU is detected;
+  pick CPU if a larger model runs out of GPU memory)
 
 **Processing Speed Examples:**
 

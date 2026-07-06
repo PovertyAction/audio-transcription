@@ -275,18 +275,18 @@ def load_model(model_name: str, device: str):
     if model_type == "whisper":
         processor = WhisperProcessor.from_pretrained(model_id)
         model = WhisperForConditionalGeneration.from_pretrained(
-            model_id, torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            model_id, dtype=torch.float16 if device == "cuda" else torch.float32
         )
         model.to(device)
     elif model_type == "voxtral":
         if not VOXTRAL_AVAILABLE:
             raise ValueError(
-                "Voxtral models are not available. Install with: uv pip install git+https://github.com/huggingface/transformers"
+                "Voxtral models are not available. Run 'uv sync' to install transformers >=4.54."
             )
         processor = AutoProcessor.from_pretrained(model_id)
         model = VoxtralForConditionalGeneration.from_pretrained(
             model_id,
-            torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
             device_map=device if device == "cuda" else None,
         )
         if device == "cpu":
@@ -414,8 +414,12 @@ def transcribe_audio(
         # Load audio file for Whisper
         audio, _ = librosa.load(audio_path, sr=16000)
 
-        # Process audio with Whisper
-        inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
+        # Process audio with Whisper; request the attention mask explicitly
+        # (Whisper's pad token equals its eos token, so generate() cannot
+        # infer the mask and warns without it)
+        inputs = processor(
+            audio, sampling_rate=16000, return_tensors="pt", return_attention_mask=True
+        )
         inputs = inputs.to(device)
 
         # Ensure input features match model dtype
@@ -425,6 +429,8 @@ def transcribe_audio(
         # Generate transcription with specified max length for Whisper
         # Force the target language unless "auto" is requested (auto-detect)
         generate_kwargs = {"max_new_tokens": max_new_tokens}
+        if getattr(inputs, "attention_mask", None) is not None:
+            generate_kwargs["attention_mask"] = inputs.attention_mask
         if language and language != "auto":
             generate_kwargs["language"] = language
             generate_kwargs["task"] = "transcribe"

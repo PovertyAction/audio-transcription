@@ -94,8 +94,12 @@ h1, h2, h3 {{
 """
 
 
-def get_device() -> str:
-    """Return the compute device: cuda if available, otherwise cpu."""
+def get_device(choice: str = "auto") -> str:
+    """Resolve a device choice (auto/cpu/gpu) to a torch device string."""
+    if choice == "cpu":
+        return "cpu"
+    if choice == "gpu":
+        return "cuda"
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -207,7 +211,23 @@ def render_sidebar() -> dict:
     st.sidebar.caption("Speaker diarization is coming in a future release.")
 
     st.sidebar.divider()
-    st.sidebar.caption(f"Compute device: {get_device().upper()}")
+    cuda_available = torch.cuda.is_available()
+    device_options = {"auto": "Auto", "cpu": "CPU"}
+    if cuda_available:
+        device_options["gpu"] = f"GPU ({torch.cuda.get_device_name(0)})"
+    device_choice = st.sidebar.selectbox(
+        "Compute device",
+        list(device_options),
+        format_func=lambda key: device_options[key],
+        help="Auto uses the GPU when one is available. Choose CPU if a larger "
+        "model runs out of GPU memory.",
+    )
+    device = get_device(device_choice)
+    if cuda_available:
+        st.sidebar.caption(f"Transcribing on: {device.upper()}")
+    else:
+        st.sidebar.caption("No CUDA GPU detected — transcription runs on the CPU.")
+
     if st.sidebar.button(
         "Clear model cache",
         icon=":material/delete_sweep:",
@@ -221,12 +241,13 @@ def render_sidebar() -> dict:
         "model_type": model_type,
         "language": language,
         "max_new_tokens": max_new_tokens,
+        "device": device,
     }
 
 
 def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> None:
     """Transcribe uploaded files and store records in session state."""
-    device = get_device()
+    device = settings["device"]
     try:
         processor, model, model_id, model_type = load_model_cached(
             settings["model_name"], device

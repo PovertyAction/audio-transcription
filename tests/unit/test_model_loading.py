@@ -37,7 +37,7 @@ class TestModelLoading:
             "openai/whisper-small"
         )
         mock_model_cls.from_pretrained.assert_called_once_with(
-            "openai/whisper-small", torch_dtype=torch.float32
+            "openai/whisper-small", dtype=torch.float32
         )
         mock_model.to.assert_called_once_with("cpu")
 
@@ -56,7 +56,7 @@ class TestModelLoading:
 
         # Should use float16 for CUDA
         mock_model_cls.from_pretrained.assert_called_once_with(
-            "openai/whisper-tiny", torch_dtype=torch.float16
+            "openai/whisper-tiny", dtype=torch.float16
         )
         mock_model.to.assert_called_once_with("cuda")
 

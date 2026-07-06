@@ -195,6 +195,9 @@ Supports Windows, macOS, and Linux with platform-specific installation commands:
 - **Python version constraint**: Stick to Python 3.12 (avoid 3.13)
 - **Special model requirements**: Voxtral models need transformers >=4.54
   (satisfied by uv.lock)
+- **GPU support**: torch/torchaudio come from the PyTorch cu128 index on
+  Windows/Linux (see `[tool.uv.sources]` in pyproject.toml); CUDA wheels fall
+  back to CPU on machines without an NVIDIA GPU
 - **Platform considerations**: Some dependencies require build tools (cmake,
   build-essential)
 
