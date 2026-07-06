@@ -397,6 +397,7 @@ class TestCommandLineArgumentParsing:
                 sys, "argv", ["transcribe_audio.py", "--output-path", "/custom/output"]
             ),
             patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("src.transcribe_audio.setup_logging"),
         ):
             main()
 
@@ -441,6 +442,7 @@ class TestCommandLineArgumentParsing:
                 ],
             ),
             patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("src.transcribe_audio.setup_logging"),
         ):
             main()
 

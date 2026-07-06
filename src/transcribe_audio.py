@@ -63,10 +63,15 @@ AVAILABLE_MODELS = {
         "type": "whisper",
         "description": "Balanced Whisper speed/accuracy (~769 MB)",
     },
+    "whisper-large-v3": {
+        "id": "openai/whisper-large-v3",
+        "type": "whisper",
+        "description": "Most accurate Whisper model, slowest (~3090 MB)",
+    },
     "whisper-large-v3-turbo": {
         "id": "openai/whisper-large-v3-turbo",
         "type": "whisper",
-        "description": "Best Whisper accuracy, slower (~1550 MB)",
+        "description": "Near large-v3 accuracy, much faster (~1550 MB)",
     },
 }
 
@@ -402,7 +407,7 @@ def transcribe_audio(
     max_new_tokens: int,
 ):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
-    start_time = time.time()
+    start_time = time.perf_counter()
     started_at = datetime.now(UTC)
 
     if model_type == "whisper":
@@ -418,10 +423,13 @@ def transcribe_audio(
             inputs.input_features = inputs.input_features.to(torch.float16)
 
         # Generate transcription with specified max length for Whisper
+        # Force the target language unless "auto" is requested (auto-detect)
+        generate_kwargs = {"max_new_tokens": max_new_tokens}
+        if language and language != "auto":
+            generate_kwargs["language"] = language
+            generate_kwargs["task"] = "transcribe"
         with torch.no_grad():
-            outputs = model.generate(
-                inputs.input_features, max_new_tokens=max_new_tokens
-            )
+            outputs = model.generate(inputs.input_features, **generate_kwargs)
 
         decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
 
@@ -468,7 +476,7 @@ def transcribe_audio(
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    end_time = time.time()
+    end_time = time.perf_counter()
     elapsed_time = end_time - start_time
 
     return decoded_outputs, elapsed_time, started_at
@@ -523,7 +531,7 @@ Examples:
     parser.add_argument(
         "--language",
         default="en",
-        help="Language code for transcription (default: en). Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
+        help="Language code for transcription (default: en). Use 'auto' for Whisper language auto-detection. Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
     )
 
     parser.add_argument(
