@@ -402,7 +402,7 @@ def transcribe_audio(
     max_new_tokens: int,
 ):
     """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
-    start_time = time.time()
+    start_time = time.perf_counter()
     started_at = datetime.now(UTC)
 
     if model_type == "whisper":
@@ -468,7 +468,7 @@ def transcribe_audio(
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    end_time = time.time()
+    end_time = time.perf_counter()
     elapsed_time = end_time - start_time
 
     return decoded_outputs, elapsed_time, started_at
