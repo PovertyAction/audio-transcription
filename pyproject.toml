@@ -31,7 +31,13 @@ dependencies = [
 
 
 [dependency-groups]
-dev = ["codespell>=2.4.1", "pre-commit>=4.2.0", "pytest>=8.0.0", "ruff>=0.7.4"]
+dev = [
+    "codespell>=2.4.1",
+    "pre-commit>=4.2.0",
+    "pytest>=8.0.0",
+    "ruff>=0.7.4",
+    "sqlfluff>=4.2.2",
+]
 
 [tool.ruff]
 line-length = 88

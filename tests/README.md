@@ -2,7 +2,8 @@
 
 ## Overview
 
-This project has a comprehensive test suite with **58 working unit tests** that thoroughly validate the audio transcription functionality.
+This project has a comprehensive test suite with **58 working unit tests** that
+thoroughly validate the audio transcription functionality.
 
 ## Test Structure
 
@@ -72,7 +73,8 @@ just test-cov-xml
 - **Data Formats**: Save/load CSV, JSON, Parquet, DuckDB (22 tests)
 - **Model Loading**: Whisper model validation, device handling (13 tests)
 - **Transcription Core**: Audio processing with mocked models (11 tests)
-- **CLI Interface**: Command-line argument parsing, workflow integration (16 tests)
+- **CLI Interface**: Command-line argument parsing, workflow integration (16
+  tests)
 
 ### ❌ **Broken Tests (3 tests)**
 
@@ -108,7 +110,7 @@ Tests are configured in `pyproject.toml`:
 
 The test suite is designed to:
 
-- ✅ **Run fast by default** (~6 seconds for core tests)
+- ✅ **Run fast by default** (\~6 seconds for core tests)
 - ✅ **Use mocks** to avoid downloading ML models
 - ✅ **Skip gracefully** when real audio files unavailable
 - ✅ **Provide detailed coverage** reports for CI systems

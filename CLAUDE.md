@@ -1,21 +1,40 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## Project Overview
 
-This is an audio transcription project built with Python that leverages machine learning libraries for audio processing and transcription. The project uses a modern Python toolchain with `uv` for dependency management and `just` for task automation.
+This is an audio transcription project built with Python that leverages machine
+learning libraries for audio processing and transcription. The project uses a
+modern Python toolchain with `uv` for dependency management and `just` for task
+automation.
+
+The workflow has two entry points:
+
+- **CLI**: `src/transcribe_audio.py` --- batch transcription with configurable
+  paths and formats
+- **Web GUI**: `src/app.py` --- Streamlit app (`just app`) for uploading and
+  transcribing files interactively. It reuses the functions in
+  `transcribe_audio.py` (`load_model`, `transcribe_audio`,
+  `create_transcription_record`, etc.) --- do not duplicate transcription logic
+  in the app. GUI results are session-only downloads and are never appended to
+  `output/transcribed_audio.*`.
 
 The project demonstrates transcription capabilities using two models:
 
-- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription (supports 99 languages)
-- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual speech recognition (supports 8 languages: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian)
+- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
+  (supports 99 languages)
+- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual
+  speech recognition (supports 8 languages: English, Spanish, French,
+  Portuguese, Hindi, German, Dutch, Italian)
 
 ## Dependencies and Environment Setup
 
 - Uses `uv` for Python environment management and dependency resolution
 - Requires Python >=3.12 (NOT 3.13 due to dependency constraints)
-- Key ML dependencies: `torch`, `torchaudio`, `transformers>=4.53.2`, `librosa`, `soundfile`
+- Key ML dependencies: `torch`, `torchaudio`, `transformers>=4.53.2`, `librosa`,
+  `soundfile`
 - Audio processing: `accelerate>=1.9.0`, `moshi>=0.2.11`, `scipy>=1.16.0`
 - Data processing: `pandas>=2.2.3`, `polars>=1.17.1`, `duckdb>=1.1.3`
 - Notebooks: `jupyter>=1.1.1`, `jupytext>=1.17.2`, `ipykernel>=6.29.5`
@@ -46,24 +65,17 @@ The project demonstrates transcription capabilities using two models:
 
 ### Special Dependencies
 
-The project requires special handling for Mistral's Voxtral model:
+Voxtral models are supported by stable HuggingFace transformers (>=4.54), which
+is pinned in `uv.lock` --- no extra installation steps are required. The
+historical workaround
+(`uv pip install git+https://github.com/huggingface/transformers`) is obsolete
+and was reverted by every `uv sync` anyway.
+
+To confirm Voxtral models are available:
 
 ```bash
-# Required for Voxtral model support (must be done in this order)
-uv pip install git+https://github.com/huggingface/transformers
-uv pip install --upgrade "mistral-common[audio]"
+uv run python -c "from transformers import VoxtralForConditionalGeneration; print('Voxtral OK')"
 ```
-
-**Important**: After installing these dependencies, you must activate the virtual environment before testing Voxtral models:
-
-```bash
-source .venv/bin/activate
-python src/transcribe_audio.py --help | grep -A 10 "Available models:"
-```
-
-This ensures that Voxtral models are properly recognized and available for use.
-
-> **Note**: These extra installation steps may become obsolete once Voxtral models are available in a future stable release of HuggingFace transformers. The project will automatically use the standard dependencies when Voxtral support is included in the stable release.
 
 ## Essential Commands
 
@@ -80,6 +92,7 @@ python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/
 python src/transcribe_audio.py --input-path ~/recordings --output-path ~/transcriptions
 
 # Development workflow
+just app                  # Launch Streamlit transcription app (GUI)
 just lab                  # Launch Jupyter Lab
 just lint-py              # Lint Python code with ruff
 just fmt-python           # Format Python code with ruff
@@ -104,6 +117,7 @@ uv run python src/transcribe_audio.py
 # Specify language for better accuracy
 uv run python src/transcribe_audio.py --language es  # Spanish
 uv run python src/transcribe_audio.py --language fr  # French
+uv run python src/transcribe_audio.py --language auto  # Whisper auto-detect
 
 # Adjust max tokens for longer/shorter transcriptions
 uv run python src/transcribe_audio.py --max-new-tokens 448  # Max for Whisper
@@ -120,7 +134,8 @@ uv run python src/transcribe_audio.py --input-path ~/my-recordings --output-path
 ## Code Quality Tools
 
 - **Linting/Formatting**: `ruff` with line length 88, Python 3.12 target
-- **Pre-commit hooks**: Configured for YAML/JSON/TOML validation, spell checking, markdown linting
+- **Pre-commit hooks**: Configured for YAML/JSON/TOML validation, spell
+  checking, markdown linting
 - **Spell checking**: `codespell` with custom ignore list (jupyter, ipa)
 - Uses `ruff` for both linting and formatting (replaces black/flake8/isort)
 - **Markdown linting**: `markdownlint-cli` with auto-fixing enabled
@@ -148,6 +163,9 @@ audio-transcription/
 │   ├── demo_whisper_transcription.ipynb    # Whisper model demo
 │   ├── demo_voxtral_transcription.ipynb    # Voxtral model demo
 │   └── *.py                  # Python versions of notebooks (jupytext)
+├── src/
+│   ├── transcribe_audio.py   # CLI and core transcription functions
+│   └── app.py                # Streamlit web GUI (just app)
 ├── pyproject.toml           # Project configuration and dependencies
 ├── Justfile                 # Command automation and task definitions
 ├── uv.lock                  # Locked dependency versions
@@ -175,8 +193,10 @@ Supports Windows, macOS, and Linux with platform-specific installation commands:
 ### Dependencies
 
 - **Python version constraint**: Stick to Python 3.12 (avoid 3.13)
-- **Special model requirements**: Voxtral model needs git+transformers and mistral-common[audio]
-- **Platform considerations**: Some dependencies require build tools (cmake, build-essential)
+- **Special model requirements**: Voxtral models need transformers >=4.54
+  (satisfied by uv.lock)
+- **Platform considerations**: Some dependencies require build tools (cmake,
+  build-essential)
 
 ### File Organization
 

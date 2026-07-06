@@ -93,17 +93,25 @@ lint-sql:
 
 # Format all markdown and config files
 fmt-markdown:
-    uv run mdformat .
+    uv run panache format .
 
 # Format a single markdown file, "f"
 fmt-md f:
-    uv run mdformat {{ f }}
+    uv run panache format {{ f }}
 
 # Check format of all markdown files
 fmt-check-markdown:
-    uv run mdformat --check .
+    uv run panache format --check .
 
-fmt-all: lint-py fmt-python lint-sql fmt-markdown
+# Lint all markdown files for semantic issues
+lint-markdown:
+    uv run panache lint .
+
+# Lint a single markdown file, "f"
+lint-md f:
+    uv run panache lint {{ f }}
+
+fmt-all: lint-py fmt-python lint-sql fmt-markdown lint-markdown
 
 # Run core unit tests (fast, default)
 test:
