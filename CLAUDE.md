@@ -1,21 +1,29 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## Project Overview
 
-This is an audio transcription project built with Python that leverages machine learning libraries for audio processing and transcription. The project uses a modern Python toolchain with `uv` for dependency management and `just` for task automation.
+This is an audio transcription project built with Python that leverages machine
+learning libraries for audio processing and transcription. The project uses a
+modern Python toolchain with `uv` for dependency management and `just` for task
+automation.
 
 The project demonstrates transcription capabilities using two models:
 
-- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription (supports 99 languages)
-- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual speech recognition (supports 8 languages: English, Spanish, French, Portuguese, Hindi, German, Dutch, Italian)
+- **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
+  (supports 99 languages)
+- **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual
+  speech recognition (supports 8 languages: English, Spanish, French,
+  Portuguese, Hindi, German, Dutch, Italian)
 
 ## Dependencies and Environment Setup
 
 - Uses `uv` for Python environment management and dependency resolution
 - Requires Python >=3.12 (NOT 3.13 due to dependency constraints)
-- Key ML dependencies: `torch`, `torchaudio`, `transformers>=4.53.2`, `librosa`, `soundfile`
+- Key ML dependencies: `torch`, `torchaudio`, `transformers>=4.53.2`, `librosa`,
+  `soundfile`
 - Audio processing: `accelerate>=1.9.0`, `moshi>=0.2.11`, `scipy>=1.16.0`
 - Data processing: `pandas>=2.2.3`, `polars>=1.17.1`, `duckdb>=1.1.3`
 - Notebooks: `jupyter>=1.1.1`, `jupytext>=1.17.2`, `ipykernel>=6.29.5`
@@ -54,7 +62,8 @@ uv pip install git+https://github.com/huggingface/transformers
 uv pip install --upgrade "mistral-common[audio]"
 ```
 
-**Important**: After installing these dependencies, you must activate the virtual environment before testing Voxtral models:
+**Important**: After installing these dependencies, you must activate the
+virtual environment before testing Voxtral models:
 
 ```bash
 source .venv/bin/activate
@@ -63,7 +72,10 @@ python src/transcribe_audio.py --help | grep -A 10 "Available models:"
 
 This ensures that Voxtral models are properly recognized and available for use.
 
-> **Note**: These extra installation steps may become obsolete once Voxtral models are available in a future stable release of HuggingFace transformers. The project will automatically use the standard dependencies when Voxtral support is included in the stable release.
+> **Note**: These extra installation steps may become obsolete once Voxtral
+> models are available in a future stable release of HuggingFace transformers.
+> The project will automatically use the standard dependencies when Voxtral
+> support is included in the stable release.
 
 ## Essential Commands
 
@@ -120,7 +132,8 @@ uv run python src/transcribe_audio.py --input-path ~/my-recordings --output-path
 ## Code Quality Tools
 
 - **Linting/Formatting**: `ruff` with line length 88, Python 3.12 target
-- **Pre-commit hooks**: Configured for YAML/JSON/TOML validation, spell checking, markdown linting
+- **Pre-commit hooks**: Configured for YAML/JSON/TOML validation, spell
+  checking, markdown linting
 - **Spell checking**: `codespell` with custom ignore list (jupyter, ipa)
 - Uses `ruff` for both linting and formatting (replaces black/flake8/isort)
 - **Markdown linting**: `markdownlint-cli` with auto-fixing enabled
@@ -175,8 +188,10 @@ Supports Windows, macOS, and Linux with platform-specific installation commands:
 ### Dependencies
 
 - **Python version constraint**: Stick to Python 3.12 (avoid 3.13)
-- **Special model requirements**: Voxtral model needs git+transformers and mistral-common[audio]
-- **Platform considerations**: Some dependencies require build tools (cmake, build-essential)
+- **Special model requirements**: Voxtral model needs git+transformers and
+  mistral-common[audio]
+- **Platform considerations**: Some dependencies require build tools (cmake,
+  build-essential)
 
 ### File Organization
 

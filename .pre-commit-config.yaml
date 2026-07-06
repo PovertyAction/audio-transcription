@@ -22,11 +22,18 @@ repos:
     hooks:
       - id: codespell
 
-  - repo: https://github.com/jolars/panache-pre-commit
-    rev: v2.43.1
+  - repo: local
     hooks:
       - id: panache-format
+        name: panache format
+        entry: uv run panache format .
+        language: system
+        pass_filenames: false
       - id: panache-lint
+        name: panache lint
+        entry: uv run panache lint .
+        language: system
+        pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.20
