@@ -216,7 +216,7 @@ class TestDuckDBOperations:
 
         assert db_file.exists()
         conn = duckdb.connect(str(db_file))
-        df = conn.execute("SELECT * FROM transcriptions").fetchdf()
+        df = conn.execute("SELECT * FROM transcriptions ORDER BY filename").fetchdf()
         conn.close()
 
         assert len(df) == 2

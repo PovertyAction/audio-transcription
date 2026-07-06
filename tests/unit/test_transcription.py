@@ -57,7 +57,7 @@ class TestTranscriptionCore:
         assert started_at.tzinfo == UTC
 
         # Verify mocks were called correctly
-        mock_librosa.load.assert_called_once_with(str(audio_path), sr=16000)
+        mock_librosa.load.assert_called_once_with(audio_path, sr=16000)
         mock_processor.assert_called_once_with(
             mock_audio_data, sampling_rate=16000, return_tensors="pt"
         )
