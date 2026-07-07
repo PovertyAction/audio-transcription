@@ -24,7 +24,9 @@ The workflow has two entry points:
 The project demonstrates transcription capabilities using two models:
 
 - **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
-  (supports 99 languages)
+  (supports 99 languages). Recordings over 30 seconds are transcribed in full:
+  sequential long-form generation by default, or a faster chunked pipeline via
+  `--chunked` (CLI) / the "Fast chunked mode" toggle (GUI).
 - **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual
   speech recognition (supports 8 languages: English, Spanish, French,
   Portuguese, Hindi, German, Dutch, Italian)

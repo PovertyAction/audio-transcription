@@ -118,6 +118,7 @@ def transcribe_upload(
     model_type: str,
     language: str,
     max_new_tokens: int,
+    chunked: bool = False,
 ) -> dict:
     """Transcribe one uploaded file and return a transcription record."""
     data = uploaded_file.getvalue()
@@ -138,6 +139,7 @@ def transcribe_upload(
             model_type,
             language,
             max_new_tokens,
+            chunked=chunked,
         )
     finally:
         os.unlink(tmp_path)
@@ -198,8 +200,22 @@ def render_sidebar() -> dict:
         value=min(400, token_cap),
         step=16,
         help="Upper limit on the length of the generated transcript. "
-        f"Whisper models cap at {WHISPER_MAX_TOKENS} tokens.",
+        f"Whisper models cap at {WHISPER_MAX_TOKENS} tokens; for recordings "
+        "over 30 seconds the limit applies per 30-second segment.",
     )
+
+    if model_type == "whisper":
+        chunked = st.sidebar.toggle(
+            "Fast chunked mode (long recordings)",
+            value=False,
+            key="chunked_mode",
+            help="Transcribe recordings over 30 seconds in parallel 30-second "
+            "chunks. Faster (especially on a GPU) but may lose accuracy at "
+            "chunk boundaries. Off = sequential long-form processing, which "
+            "is slower but most accurate.",
+        )
+    else:
+        chunked = False
 
     st.sidebar.toggle(
         "Multiple speakers (diarization)",
@@ -241,6 +257,7 @@ def render_sidebar() -> dict:
         "model_type": model_type,
         "language": language,
         "max_new_tokens": max_new_tokens,
+        "chunked": chunked,
         "device": device,
     }
 
@@ -288,6 +305,7 @@ def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> Non
                 model_type,
                 settings["language"],
                 settings["max_new_tokens"],
+                chunked=settings["chunked"],
             )
         except Exception as exc:  # noqa: BLE001 - keep the batch going
             st.error(

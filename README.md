@@ -45,6 +45,8 @@ The app opens in your browser (default: <http://localhost:8501>) and lets you:
 - **Set the audio language** --- Whisper offers auto-detect; Voxtral requires an
   explicit language
 - **Adjust max tokens** for longer or shorter transcripts
+- **Fast chunked mode** (Whisper) --- speed up long recordings by transcribing
+  overlapping 30-second chunks in parallel, at a slight accuracy cost
 - **Play back audio and read transcripts** in the browser
 - **Download results** as CSV or JSON
 
@@ -72,7 +74,12 @@ uv run python src/transcribe_audio.py [OPTIONS]
   `auto` for Whisper language auto-detection. Whisper supports 99 languages,
   Voxtral supports 8.
 - `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default:
-  `400`). Whisper models have a maximum limit of 448 tokens.
+  `400`). Whisper models have a maximum limit of 448 tokens; for recordings over
+  30 seconds the limit applies per 30-second segment.
+- `--chunked`: Faster chunked transcription for long recordings (Whisper only).
+  May lose accuracy at chunk boundaries. Without this flag, recordings over 30
+  seconds use sequential long-form processing (slower, most accurate). Either
+  way the full recording is transcribed.
 - `--input-path PATH`: Directory containing audio files (default: `./audio`)
 - `--output-path PATH`: Directory for output files (default: `./output`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
