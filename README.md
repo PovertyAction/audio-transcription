@@ -1,14 +1,15 @@
 # Audio Transcription Project
 
-Python project for audio transcription using OpenAI Whisper and Mistral Voxtral
-models.
+Python project for audio transcription using OpenAI Whisper, Mistral Voxtral,
+and Cohere Transcribe models, with optional speaker diarization via pyannote.
 
 ## Usage
 
 This project provides a command-line tool for transcribing audio files using
-OpenAI's Whisper models and Mistral's Voxtral models. You can transcribe
-individual files or batch process entire directories with support for multiple
-output formats.
+OpenAI's Whisper models, Mistral's Voxtral models, and Cohere's Transcribe
+model. You can transcribe individual files or batch process entire directories
+with support for multiple output formats, and optionally label who said what
+with speaker diarization.
 
 ### Quick Start
 
@@ -41,12 +42,17 @@ uv run streamlit run src/app.py
 The app opens in your browser (default: <http://localhost:8501>) and lets you:
 
 - **Upload audio files** (mp3, wav, flac, m4a, ogg) --- multiple files at once
-- **Choose a model** --- Whisper models, plus Voxtral models when available
-- **Set the audio language** --- Whisper offers auto-detect; Voxtral requires an
-  explicit language
-- **Adjust max tokens** for longer or shorter transcripts
+- **Choose a model** --- Whisper models, the Cohere Transcribe model, plus
+  Voxtral models when available
+- **Set the audio language** --- Whisper offers auto-detect; Voxtral and Cohere
+  require an explicit language
+- **Adjust max tokens** for longer or shorter transcripts (Whisper/Voxtral;
+  Cohere manages output length automatically)
 - **Fast chunked mode** (Whisper) --- speed up long recordings by transcribing
   overlapping 30-second chunks in parallel, at a slight accuracy cost
+- **Multiple speakers (diarization)** --- label who said what using pyannote
+  speaker diarization (see [Speaker Diarization](#speaker-diarization) for the
+  one-time model access setup)
 - **Play back audio and read transcripts** in the browser
 - **Download results** as CSV or JSON
 
@@ -54,8 +60,6 @@ Notes:
 
 - GUI results are session-only downloads; they are **not** appended to the
   shared `output/transcribed_audio.*` files used by the CLI.
-- Speaker diarization (labeling who said what in multi-speaker recordings) is
-  **coming soon** --- the toggle in the app is a placeholder for now.
 
 ### Command Line Interface
 
@@ -67,21 +71,33 @@ uv run python src/transcribe_audio.py [OPTIONS]
 
 **Available Options:**
 
-- `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default:
-  `whisper-small`)
+- `--model MODEL`: Choose the transcription model - Whisper, Voxtral, or Cohere
+  (default: `whisper-small`)
 - `--format FORMAT`: Output format for results (default: `csv`)
 - `--language LANGUAGE`: Language code for transcription (default: `en`). Use
   `auto` for Whisper language auto-detection. Whisper supports 99 languages,
-  Voxtral supports 8.
+  Voxtral supports 8, Cohere supports 14 (no auto-detect).
 - `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default:
   `400`). Whisper models have a maximum limit of 448 tokens; for recordings over
-  30 seconds the limit applies per 30-second segment.
+  30 seconds the limit applies per 30-second segment. Ignored for Cohere, which
+  manages output length automatically.
 - `--chunked`: Faster chunked transcription for long recordings (Whisper only).
   May lose accuracy at chunk boundaries. Without this flag, recordings over 30
   seconds use sequential long-form processing (slower, most accurate). Either
-  way the full recording is transcribed.
+  way the full recording is transcribed. (Cohere chunks long recordings
+  internally regardless of this flag.)
+- `--diarize`: Label speakers ("who said what") with pyannote speaker
+  diarization (see [Speaker Diarization](#speaker-diarization))
+- `--num-speakers N`: Exact number of speakers, if known (improves diarization)
+- `--hf-token TOKEN`: Hugging Face token for downloading gated models (falls
+  back to the `HF_TOKEN` environment variable or `huggingface-cli login`)
+- `--diarization-path PATH`: Local download of the diarization model for fully
+  offline use (no token or internet needed)
 - `--input-path PATH`: Directory containing audio files (default: `./audio`)
-- `--output-path PATH`: Directory for output files (default: `./output`)
+- `--output-path PATH`: **Directory** for output files (default: `./output`).
+  Pass a directory, not a filename --- results are always written inside it as
+  `transcribed_audio.<format>` (e.g. `--output-path ./output/my-project`, not
+  `--output-path ./output/my-project.csv`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
 
 ### Available Models
@@ -139,6 +155,113 @@ Dutch (`nl`), and Italian (`it`).
 
 > **Note**: Voxtral dependencies are included in the standard environment. See
 > [Voxtral Model Setup](#voxtral-model-setup) below to verify availability.
+
+#### Cohere Transcribe Model (Cohere Labs)
+
+  | Model    | Description                                       | Size       | Use Case                                    |
+  | -------- | ------------------------------------------------- | ---------- | ------------------------------------------- |
+  | `cohere` | Multilingual STT with built-in long-form chunking | ~2B params | Long recordings, multilingual transcription |
+
+**Cohere Language Support**: 14 languages: English (`en`), German (`de`), French
+(`fr`), Italian (`it`), Spanish (`es`), Portuguese (`pt`), Greek (`el`), Dutch
+(`nl`), Polish (`pl`), Arabic (`ar`), Vietnamese (`vi`), Chinese (`zh`),
+Japanese (`ja`), and Korean (`ko`). No auto-detect --- an explicit language is
+required.
+
+Notes:
+
+- `CohereLabs/cohere-transcribe-03-2026` is a **gated model** --- see [Hugging
+  Face Access for Gated Models](#hugging-face-access-for-gated-models) for the
+  one-time setup.
+- Long recordings are chunked and reassembled automatically by the model ---
+  `--max-new-tokens` and `--chunked` are ignored.
+
+### Hugging Face Access for Gated Models
+
+The Cohere model and the pyannote diarization model are **gated** on the Hugging
+Face Hub (the Whisper and Voxtral models are not). A one-time setup is required
+for the first download; the models are cached locally afterwards and all
+transcription runs fully offline on your machine.
+
+**1. Accept the model terms in your browser** (while logged in to your HF
+account):
+
+- Cohere: <https://hf.co/CohereLabs/cohere-transcribe-03-2026>
+- pyannote: <https://hf.co/pyannote/speaker-diarization-community-1>
+
+**2. Create an access token** at <https://hf.co/settings/tokens>:
+
+- Simplest: a **classic token with the "Read" role**.
+- If you use a **fine-grained token**, you must enable **"Read access to
+  contents of all public gated repos you can access"** under repository
+  permissions --- without it, downloads fail with
+  `403 Forbidden: Please   enable access to public gated repositories in your fine-grained token   settings`.
+
+**3. Authenticate locally** (either method):
+
+```bash
+# Option A: log in once; the token is cached for all future runs
+uv run hf auth login
+
+# Option B: set the environment variable for the current session
+$env:HF_TOKEN = "hf_..."   # PowerShell
+export HF_TOKEN="hf_..."   # bash/zsh
+```
+
+Check your login status with `uv run hf auth whoami`.
+
+**Troubleshooting first downloads:**
+
+  | Error                                       | Cause                            | Fix                                                        |
+  | ------------------------------------------- | -------------------------------- | ---------------------------------------------------------- |
+  | `401 ... Please log in`                     | Not authenticated                | Step 3 above                                               |
+  | `403 ... fine-grained token settings`       | Token lacks gated-repo access    | Step 2 above (edit token permissions or use a classic one) |
+  | `Cannot access gated repo` after logging in | Terms not accepted for the model | Step 1 above (accept on the model page, per model)         |
+
+### Speaker Diarization
+
+Add `--diarize` (CLI) or switch on **Multiple speakers (diarization)** in the
+web app to label who said what. Diarization finds speaker turns with
+[pyannote](https://hf.co/pyannote/speaker-diarization-community-1), then
+transcribes each turn with the selected model, producing transcripts like:
+
+```text
+SPEAKER_01: Thank you for joining. Let's begin with introductions.; SPEAKER_00: My name is ...; SPEAKER_01: Great, first question: ...
+```
+
+Consecutive turns by the same speaker are concatenated into a single turn, so
+the transcript alternates speaker by speaker (any number of speakers). Turns are
+separated by `"; "` and the whole transcript is one line --- the CSV/JSON
+writers quote and escape it automatically.
+
+**One-time setup** --- the pyannote model is gated: follow [Hugging Face Access
+for Gated Models](#hugging-face-access-for-gated-models) (accept the terms on
+the pyannote model page). The CLI also accepts the token directly via
+`--hf-token`.
+
+**Fully offline use** --- download the model once, then no token or internet is
+needed:
+
+```bash
+# One-time download (requires git-lfs and an HF token)
+git clone https://hf.co/pyannote/speaker-diarization-community-1 ~/models/pyannote-speaker-diarization-community-1
+
+# Diarize offline from the local copy
+uv run python src/transcribe_audio.py --diarize --diarization-path ~/models/pyannote-speaker-diarization-community-1
+```
+
+In the web app, enter the same directory under **Local model directory (offline
+use)**.
+
+Tips:
+
+- If you know the number of speakers, pass `--num-speakers N` (or set it in the
+  app) for better accuracy.
+- Diarized runs keep the same output schema: speaker labels are embedded in
+  `transcription_text` (`"; "`-separated speaker turns) and `model_id` records
+  both the transcription and diarization models.
+- Files already transcribed without diarization are skipped by ID --- add
+  `--all-audio` to re-run them with speaker labels.
 
 ### Output Formats
 

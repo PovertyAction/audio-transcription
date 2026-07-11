@@ -42,6 +42,24 @@ VOXTRAL_LANGUAGES = {
     "it": "Italian",
 }
 
+# Languages supported by the Cohere Transcribe model (no auto-detect)
+COHERE_LANGUAGES = {
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "it": "Italian",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "el": "Greek",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ar": "Arabic",
+    "vi": "Vietnamese",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
 # Curated subset of Whisper's 99 supported languages
 WHISPER_LANGUAGES = {
     "auto": "Auto-detect",
@@ -109,6 +127,14 @@ def load_model_cached(model_name: str, device: str):
     return ta.load_model(model_name, device)
 
 
+@st.cache_resource(show_spinner="Loading diarization pipeline...")
+def load_diarization_cached(device: str, hf_token: str | None, model_path: str | None):
+    """Load and cache the pyannote diarization pipeline."""
+    return ta.load_diarization_pipeline(
+        device, hf_token=hf_token or None, model_path=model_path or None
+    )
+
+
 def transcribe_upload(
     uploaded_file,
     processor,
@@ -119,6 +145,8 @@ def transcribe_upload(
     language: str,
     max_new_tokens: int,
     chunked: bool = False,
+    diarization_pipeline=None,
+    num_speakers: int | None = None,
 ) -> dict:
     """Transcribe one uploaded file and return a transcription record."""
     data = uploaded_file.getvalue()
@@ -130,21 +158,39 @@ def transcribe_upload(
         tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
-        decoded_outputs, elapsed_time, started_at = ta.transcribe_audio(
-            tmp_path,
-            processor,
-            model,
-            device,
-            model_id,
-            model_type,
-            language,
-            max_new_tokens,
-            chunked=chunked,
-        )
+        if diarization_pipeline is not None:
+            decoded_outputs, elapsed_time, started_at = ta.transcribe_with_diarization(
+                tmp_path,
+                diarization_pipeline,
+                processor,
+                model,
+                device,
+                model_id,
+                model_type,
+                language,
+                max_new_tokens,
+                chunked=chunked,
+                num_speakers=num_speakers,
+            )
+        else:
+            decoded_outputs, elapsed_time, started_at = ta.transcribe_audio(
+                tmp_path,
+                processor,
+                model,
+                device,
+                model_id,
+                model_type,
+                language,
+                max_new_tokens,
+                chunked=chunked,
+            )
     finally:
         os.unlink(tmp_path)
 
     text = " ".join(part.strip() for part in decoded_outputs).strip()
+    record_model_id = model_id
+    if diarization_pipeline is not None:
+        record_model_id = f"{model_id} + {ta.DIARIZATION_MODEL_ID}"
     file_id = ta.generate_file_id(uploaded_file.name, len(data))
     return ta.create_transcription_record(
         uploaded_file.name,
@@ -152,7 +198,7 @@ def transcribe_upload(
         len(data),
         elapsed_time,
         text,
-        model_id,
+        record_model_id,
         started_at,
     )
 
@@ -173,12 +219,17 @@ def render_sidebar() -> dict:
         index=list(ta.AVAILABLE_MODELS).index("whisper-small"),
         format_func=lambda m: f"{m} — {ta.AVAILABLE_MODELS[m]['description']}",
         help="Whisper models support ~99 languages. Voxtral models support "
-        "8 languages and may be more accurate for multilingual audio.",
+        "8 languages and may be more accurate for multilingual audio. "
+        "Cohere supports 14 languages and handles long recordings "
+        "automatically.",
     )
     model_type = ta.AVAILABLE_MODELS[model_name]["type"]
 
     if model_type == "voxtral":
         languages = VOXTRAL_LANGUAGES
+        default_language = "en"
+    elif model_type == "cohere":
+        languages = COHERE_LANGUAGES
         default_language = "en"
     else:
         languages = WHISPER_LANGUAGES
@@ -192,17 +243,27 @@ def render_sidebar() -> dict:
         "'Auto-detect' lets the model guess the language.",
     )
 
-    token_cap = WHISPER_MAX_TOKENS if model_type == "whisper" else VOXTRAL_MAX_TOKENS
-    max_new_tokens = st.sidebar.slider(
-        "Max new tokens",
-        min_value=64,
-        max_value=token_cap,
-        value=min(400, token_cap),
-        step=16,
-        help="Upper limit on the length of the generated transcript. "
-        f"Whisper models cap at {WHISPER_MAX_TOKENS} tokens; for recordings "
-        "over 30 seconds the limit applies per 30-second segment.",
-    )
+    if model_type == "cohere":
+        # Cohere manages output length and long-form chunking internally;
+        # max_new_tokens is ignored downstream.
+        max_new_tokens = 400
+        st.sidebar.caption(
+            "Cohere manages output length and long-form chunking automatically."
+        )
+    else:
+        token_cap = (
+            WHISPER_MAX_TOKENS if model_type == "whisper" else VOXTRAL_MAX_TOKENS
+        )
+        max_new_tokens = st.sidebar.slider(
+            "Max new tokens",
+            min_value=64,
+            max_value=token_cap,
+            value=min(400, token_cap),
+            step=16,
+            help="Upper limit on the length of the generated transcript. "
+            f"Whisper models cap at {WHISPER_MAX_TOKENS} tokens; for recordings "
+            "over 30 seconds the limit applies per 30-second segment.",
+        )
 
     if model_type == "whisper":
         chunked = st.sidebar.toggle(
@@ -217,14 +278,48 @@ def render_sidebar() -> dict:
     else:
         chunked = False
 
-    st.sidebar.toggle(
+    num_speakers = None
+    hf_token = ""
+    diarization_path = ""
+    diarize = st.sidebar.toggle(
         "Multiple speakers (diarization)",
         value=False,
-        disabled=True,
-        help="Coming soon — speaker diarization (who said what) is not yet "
-        "supported. Transcripts currently treat all speech as one stream.",
+        disabled=not ta.PYANNOTE_AVAILABLE,
+        help="Label who said what using pyannote speaker diarization. "
+        "Each speaker turn is transcribed with the selected model above.",
     )
-    st.sidebar.caption("Speaker diarization is coming in a future release.")
+    if not ta.PYANNOTE_AVAILABLE:
+        st.sidebar.caption(
+            "Speaker diarization requires pyannote.audio — run `uv sync` to install it."
+        )
+    elif diarize:
+        num_speakers_input = st.sidebar.number_input(
+            "Number of speakers (0 = detect automatically)",
+            min_value=0,
+            max_value=20,
+            value=0,
+            step=1,
+            help="Set the exact speaker count if you know it — this improves "
+            "diarization accuracy.",
+        )
+        num_speakers = int(num_speakers_input) or None
+        diarization_path = st.sidebar.text_input(
+            "Local model directory (offline use)",
+            value="",
+            help="Path to a local download of "
+            f"{ta.DIARIZATION_MODEL_ID} — no token or internet needed. Leave "
+            "blank to download from the HF Hub (requires accepting the "
+            "model's terms and a token).",
+        ).strip()
+        if not diarization_path:
+            hf_token = st.sidebar.text_input(
+                "Hugging Face token",
+                value=os.environ.get("HF_TOKEN", ""),
+                type="password",
+                help="Needed once to download the gated diarization model. "
+                "Defaults to the HF_TOKEN environment variable; a cached "
+                "'huggingface-cli login' also works.",
+            ).strip()
 
     st.sidebar.divider()
     cuda_available = torch.cuda.is_available()
@@ -258,6 +353,10 @@ def render_sidebar() -> dict:
         "language": language,
         "max_new_tokens": max_new_tokens,
         "chunked": chunked,
+        "diarize": diarize,
+        "num_speakers": num_speakers,
+        "hf_token": hf_token,
+        "diarization_path": diarization_path,
         "device": device,
     }
 
@@ -276,13 +375,28 @@ def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> Non
         )
         return
 
+    diarization_pipeline = None
+    if settings["diarize"]:
+        try:
+            diarization_pipeline = load_diarization_cached(
+                device, settings["hf_token"], settings["diarization_path"]
+            )
+        except Exception as exc:  # noqa: BLE001 - surface any load failure in the UI
+            st.error(
+                f"Failed to load diarization pipeline: {exc}", icon=":material/error:"
+            )
+            return
+
     results = st.session_state.results
     audio_bytes = st.session_state.audio_bytes
     progress = st.progress(0.0, text="Starting transcription...")
 
     for i, uploaded_file in enumerate(uploads):
         file_id = ta.generate_file_id(uploaded_file.name, uploaded_file.size)
-        result_key = f"{file_id}:{settings['model_name']}:{settings['language']}"
+        diar_suffix = "diar" if settings["diarize"] else "plain"
+        result_key = (
+            f"{file_id}:{settings['model_name']}:{settings['language']}:{diar_suffix}"
+        )
         progress.progress(
             i / len(uploads), text=f"Transcribing {uploaded_file.name}..."
         )
@@ -306,6 +420,8 @@ def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> Non
                 settings["language"],
                 settings["max_new_tokens"],
                 chunked=settings["chunked"],
+                diarization_pipeline=diarization_pipeline,
+                num_speakers=settings["num_speakers"],
             )
         except Exception as exc:  # noqa: BLE001 - keep the batch going
             st.error(
@@ -335,7 +451,13 @@ def render_results() -> None:
             audio = st.session_state.audio_bytes.get(record["file_id"])
             if audio:
                 st.audio(audio)
-            st.markdown(record["transcription_text"] or "*No speech detected.*")
+            # Diarized transcripts are one line of "SPEAKER_XX: ..." turns
+            # separated by "; " — break turns onto their own lines for
+            # readability ("  \n" is a markdown line break).
+            st.markdown(
+                record["transcription_text"].replace("; SPEAKER_", ";  \nSPEAKER_")
+                or "*No speech detected.*"
+            )
             st.caption(
                 f"Model: {record['model_id']} · "
                 f"Time: {record['transcription_time_seconds']:.1f}s"
@@ -372,9 +494,9 @@ def main() -> None:
     st.markdown(IPA_CSS, unsafe_allow_html=True)
     st.title("Audio transcription")
     st.caption(
-        "Upload audio files and transcribe them with Whisper or Voxtral "
-        "speech-to-text models. Results stay in this session — use the "
-        "download buttons to save them."
+        "Upload audio files and transcribe them with Whisper, Voxtral, or "
+        "Cohere speech-to-text models — optionally with speaker labels. "
+        "Results stay in this session — use the download buttons to save them."
     )
 
     st.session_state.setdefault("results", {})

@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from transformers import (
+    AutoProcessor,
+    CohereAsrForConditionalGeneration,
     WhisperForConditionalGeneration,
     WhisperProcessor,
     pipeline,
@@ -25,7 +27,7 @@ from transformers import (
 
 # Optional Voxtral support - only import if available
 try:
-    from transformers import AutoProcessor, VoxtralForConditionalGeneration
+    from transformers import VoxtralForConditionalGeneration
 
     VOXTRAL_AVAILABLE = True
 except ImportError:
@@ -35,9 +37,49 @@ except ImportError:
         "transformers >=4.54."
     )
 
+# Optional pyannote support for speaker diarization - only import if available.
+# Suppress pyannote's torchcodec/FFmpeg warning: its built-in audio decoding
+# is unused here because diarize_audio() always passes in-memory waveforms.
+try:
+    import warnings
+
+    with warnings.catch_warnings():
+        # (?s) lets .* cross newlines - the warning text starts with one
+        warnings.filterwarnings("ignore", message="(?s).*torchcodec.*")
+        from pyannote.audio import Pipeline as PyannotePipeline
+
+    PYANNOTE_AVAILABLE = True
+except ImportError:
+    PYANNOTE_AVAILABLE = False
+
 # Constants
 AUDIO_DIR = Path(__file__).parent.parent / "audio"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
+# Speaker diarization model (pyannote). Gated on the HF Hub: accept the terms
+# at https://hf.co/pyannote/speaker-diarization-community-1 and authenticate
+# with an HF token for the first download. For fully offline use, download the
+# model once and point --diarization-path (CLI) / "Local model directory"
+# (GUI) at the local copy - no token or internet needed afterwards.
+DIARIZATION_MODEL_ID = "pyannote/speaker-diarization-community-1"
+
+# Languages supported by the Cohere Transcribe model (no auto-detect)
+COHERE_LANGUAGES = {
+    "en",
+    "de",
+    "fr",
+    "it",
+    "es",
+    "pt",
+    "el",
+    "nl",
+    "pl",
+    "ar",
+    "vi",
+    "zh",
+    "ja",
+    "ko",
+}
 
 # Output format configurations
 OUTPUT_FORMATS = {
@@ -74,6 +116,12 @@ AVAILABLE_MODELS = {
         "id": "openai/whisper-large-v3-turbo",
         "type": "whisper",
         "description": "Near large-v3 accuracy, much faster (~1550 MB)",
+    },
+    # Cohere model
+    "cohere": {
+        "id": "CohereLabs/cohere-transcribe-03-2026",
+        "type": "cohere",
+        "description": "Cohere Transcribe multilingual STT (~2B params, 14 languages, built-in long-form chunking)",
     },
 }
 
@@ -293,6 +341,44 @@ def load_model(model_name: str, device: str):
         )
         if device == "cpu":
             model.to(device)
+    elif model_type == "cohere":
+        # Native transformers support (>=5.4); the processor chunks long
+        # recordings into overlapping windows and decode() reassembles them.
+        try:
+            processor = AutoProcessor.from_pretrained(model_id)
+            model = CohereAsrForConditionalGeneration.from_pretrained(
+                model_id,
+                dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            )
+        except OSError as e:
+            # The gated-repo 401/403 is often buried in the exception chain
+            # (transformers re-raises it as a generic connection error).
+            chain, cause = [], e
+            while cause is not None and len(chain) < 5:
+                chain.append(str(cause))
+                cause = cause.__cause__
+            chain_text = " ".join(chain).lower()
+            if "gated" in chain_text or "401" in chain_text:
+                raise ValueError(
+                    f"{model_id} is a gated model. Accept the terms at "
+                    f"https://hf.co/{model_id} and authenticate with "
+                    "'huggingface-cli login' or the HF_TOKEN environment "
+                    "variable, then retry. The model is cached locally after "
+                    "the first download."
+                ) from e
+            if "403" in chain_text or "permission" in chain_text:
+                raise ValueError(
+                    f"Access to {model_id} was denied (403). Your HF token "
+                    "lacks permission for gated repositories: at "
+                    "https://hf.co/settings/tokens either use a classic "
+                    "'Read' token, or edit your fine-grained token and "
+                    "enable 'Read access to contents of all public gated "
+                    "repos you can access'. Also confirm you accepted the "
+                    f"terms at https://hf.co/{model_id}."
+                ) from e
+            raise
+        model.to(device)
+        model.eval()
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -392,9 +478,14 @@ def display_rich_summary(
 
     # Display in a panel
     panel = Panel(table, title="🎤 Audio Transcription Complete", border_style="blue")
-    console.print("\n")
-    console.print(panel)
-    console.print("\n")
+    try:
+        console.print("\n")
+        console.print(panel)
+        console.print("\n")
+    except UnicodeEncodeError:
+        # Legacy Windows consoles (cp1252) can't render the emoji/box glyphs
+        print("\n=== Audio Transcription Complete ===")
+        print(f"Files processed: {processed_files}, skipped: {skipped_files}")
 
 
 # %%
@@ -413,7 +504,9 @@ def transcribe_audio(
 
     Whisper recordings longer than 30 seconds are transcribed in full using
     sequential long-form generation, or the faster chunked pipeline when
-    ``chunked`` is True. ``chunked`` is ignored for Voxtral models.
+    ``chunked`` is True. ``chunked`` is ignored for Voxtral and Cohere models.
+    Cohere models chunk long recordings internally and manage output length
+    themselves, so ``max_new_tokens`` is also ignored for them.
     """
     start_time = time.perf_counter()
     started_at = datetime.now(UTC)
@@ -521,6 +614,43 @@ def transcribe_audio(
             outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
         )
 
+    elif model_type == "cohere":
+        if not language or language == "auto":
+            raise ValueError(
+                "Cohere models do not support language auto-detection. "
+                f"Choose one of: {', '.join(sorted(COHERE_LANGUAGES))}"
+            )
+        if language not in COHERE_LANGUAGES:
+            raise ValueError(
+                f"Cohere models do not support language '{language}'. "
+                f"Choose one of: {', '.join(sorted(COHERE_LANGUAGES))}"
+            )
+
+        # The processor splits recordings over ~35s into overlapping chunks
+        # (audio_chunk_index maps chunks back to the sample) and decode()
+        # reassembles the per-chunk texts into one transcript.
+        audio_data, _ = librosa.load(audio_path, sr=16000)
+        inputs = processor(
+            audio_data, sampling_rate=16000, return_tensors="pt", language=language
+        )
+        audio_chunk_index = inputs.get("audio_chunk_index")
+        inputs = inputs.to(device)
+        if device == "cuda":
+            inputs["input_features"] = inputs["input_features"].to(torch.bfloat16)
+
+        # 448 comfortably covers a 35s chunk; the user-facing max_new_tokens
+        # is ignored for Cohere (output length is per-chunk, not per-file)
+        with torch.no_grad():
+            outputs = model.generate(**inputs, max_new_tokens=448)
+
+        decoded = processor.decode(
+            outputs,
+            skip_special_tokens=True,
+            audio_chunk_index=audio_chunk_index,
+            language=language,
+        )
+        decoded_outputs = [decoded] if isinstance(decoded, str) else list(decoded)
+
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -531,13 +661,196 @@ def transcribe_audio(
 
 
 # %%
+def load_diarization_pipeline(
+    device: str,
+    hf_token: str | None = None,
+    model_path: Path | str | None = None,
+):
+    """Load the pyannote speaker diarization pipeline.
+
+    ``model_path`` loads a locally downloaded copy of the model (fully
+    offline, no token needed). Otherwise the model is fetched from the HF
+    Hub, which requires accepting its gated terms and authenticating via
+    ``hf_token``, the HF_TOKEN environment variable, or a cached
+    ``huggingface-cli login``.
+    """
+    if not PYANNOTE_AVAILABLE:
+        raise ValueError(
+            "Speaker diarization requires pyannote.audio. Run 'uv sync' to install it."
+        )
+
+    source = str(model_path) if model_path else DIARIZATION_MODEL_ID
+    try:
+        diarization_pipeline = PyannotePipeline.from_pretrained(
+            source, token=hf_token or None
+        )
+    except Exception as e:
+        if model_path:
+            raise ValueError(
+                f"Could not load diarization model from '{model_path}'. "
+                "Point --diarization-path at a local download of "
+                f"{DIARIZATION_MODEL_ID} (see the model card's 'Offline use' "
+                f"section). Original error: {e}"
+            ) from e
+        raise ValueError(
+            f"Could not load {DIARIZATION_MODEL_ID} from the HF Hub. The model "
+            "is gated: accept the terms at "
+            f"https://hf.co/{DIARIZATION_MODEL_ID} and provide an HF token "
+            "(--hf-token, the HF_TOKEN environment variable, or "
+            "'huggingface-cli login'). For offline use, download the model "
+            f"once and pass --diarization-path. Original error: {e}"
+        ) from e
+
+    if device == "cuda":
+        diarization_pipeline.to(torch.device("cuda"))
+    return diarization_pipeline
+
+
+def diarize_audio(
+    audio_path: Path,
+    diarization_pipeline,
+    num_speakers: int | None = None,
+    min_turn_duration: float = 0.5,
+    merge_gap: float = 0.5,
+) -> list[tuple[float, float, str]]:
+    """Run speaker diarization and return merged speaker turns.
+
+    Returns a list of ``(start_seconds, end_seconds, speaker_label)`` tuples.
+    Consecutive turns by the same speaker separated by less than
+    ``merge_gap`` seconds are merged; turns shorter than
+    ``min_turn_duration`` seconds are dropped.
+    """
+    # Hand pyannote an in-memory waveform rather than the file path: librosa
+    # handles all our formats (incl. M4A) and this avoids pyannote's own
+    # audio decoding, which is fragile on Windows.
+    audio_data, sample_rate = librosa.load(audio_path, sr=16000)
+    waveform = torch.from_numpy(audio_data).unsqueeze(0)
+    kwargs = {}
+    if num_speakers:
+        kwargs["num_speakers"] = num_speakers
+    output = diarization_pipeline(
+        {"waveform": waveform, "sample_rate": sample_rate}, **kwargs
+    )
+
+    # exclusive_speaker_diarization (pyannote >= community-1) assigns each
+    # instant to a single speaker, which suits transcription alignment.
+    annotation = getattr(output, "exclusive_speaker_diarization", None)
+    if annotation is None:
+        annotation = getattr(output, "speaker_diarization", output)
+
+    turns: list[tuple[float, float, str]] = []
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
+        if turns and turns[-1][2] == speaker and turn.start - turns[-1][1] < merge_gap:
+            turns[-1] = (turns[-1][0], turn.end, speaker)
+        else:
+            turns.append((turn.start, turn.end, speaker))
+
+    return [
+        (start, end, speaker)
+        for start, end, speaker in turns
+        if end - start >= min_turn_duration
+    ]
+
+
+def transcribe_with_diarization(
+    audio_path: Path,
+    diarization_pipeline,
+    processor,
+    model,
+    device,
+    model_id: str,
+    model_type: str,
+    language: str,
+    max_new_tokens: int,
+    chunked: bool = False,
+    num_speakers: int | None = None,
+):
+    """Transcribe audio with speaker labels ("who said what").
+
+    Runs pyannote diarization to find speaker turns, transcribes each turn
+    with the selected model, and returns the same
+    ``(decoded_outputs, elapsed_time, started_at)`` contract as
+    :func:`transcribe_audio`. The single decoded output is a one-line
+    transcript of ``SPEAKER_XX: text`` turns separated by ``"; "``, with
+    consecutive turns by the same speaker concatenated into one turn
+    (speakers alternate as the conversation goes back and forth). Falls back
+    to plain transcription if no speaker turns are found.
+    """
+    import os
+    import tempfile
+
+    import soundfile as sf
+
+    start_time = time.perf_counter()
+    started_at = datetime.now(UTC)
+
+    turns = diarize_audio(audio_path, diarization_pipeline, num_speakers)
+    if not turns:
+        decoded_outputs, _, _ = transcribe_audio(
+            audio_path,
+            processor,
+            model,
+            device,
+            model_id,
+            model_type,
+            language,
+            max_new_tokens,
+            chunked=chunked,
+        )
+        elapsed_time = time.perf_counter() - start_time
+        return decoded_outputs, elapsed_time, started_at
+
+    audio_data, sample_rate = librosa.load(audio_path, sr=16000)
+    # (speaker, text) per turn; consecutive same-speaker turns merge into one
+    speaker_turns: list[tuple[str, str]] = []
+    for turn_start, turn_end, speaker in turns:
+        segment = audio_data[
+            int(turn_start * sample_rate) : int(turn_end * sample_rate)
+        ]
+        if segment.size == 0:
+            continue
+
+        # Write the slice to a temp WAV (closed before use for Windows) so
+        # every model type can transcribe it through transcribe_audio().
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            sf.write(temp_file.name, segment, sample_rate)
+            temp_segment_path = Path(temp_file.name)
+        try:
+            decoded_outputs, _, _ = transcribe_audio(
+                temp_segment_path,
+                processor,
+                model,
+                device,
+                model_id,
+                model_type,
+                language,
+                max_new_tokens,
+                chunked=chunked,
+            )
+        finally:
+            os.unlink(temp_segment_path)
+
+        text = " ".join(part.strip() for part in decoded_outputs).strip()
+        if not text:
+            continue
+        if speaker_turns and speaker_turns[-1][0] == speaker:
+            speaker_turns[-1] = (speaker, f"{speaker_turns[-1][1]} {text}")
+        else:
+            speaker_turns.append((speaker, text))
+
+    transcript = "; ".join(f"{speaker}: {text}" for speaker, text in speaker_turns)
+    elapsed_time = time.perf_counter() - start_time
+    return [transcript], elapsed_time, started_at
+
+
+# %%
 def main():
     """Process all audio files for transcription."""
     # Record start time for logging
     run_start_time = datetime.now(UTC)
 
     parser = argparse.ArgumentParser(
-        description="Transcribe audio files using Whisper or Voxtral models, store results in local data formats.",
+        description="Transcribe audio files using Whisper, Voxtral, or Cohere models, store results in local data formats.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Available output formats:
@@ -552,6 +865,9 @@ Examples:
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
   python src/transcribe_audio.py --model whisper-large-v3 --format duckdb --all-audio --language en
   python src/transcribe_audio.py --model voxtral-small --format parquet
+  python src/transcribe_audio.py --model cohere --language en --format csv
+  python src/transcribe_audio.py --model whisper-small --diarize --num-speakers 2
+  python src/transcribe_audio.py --model cohere --diarize --diarization-path ~/models/pyannote-speaker-diarization-community-1
   python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
   python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
         """,
@@ -574,13 +890,15 @@ Examples:
         "--model",
         choices=list(AVAILABLE_MODELS.keys()),
         default="whisper-small",
-        help="Model to use for transcription: Whisper or Voxtral (default: whisper-small)",
+        help="Model to use for transcription: Whisper, Voxtral, or Cohere (default: whisper-small)",
     )
 
     parser.add_argument(
         "--language",
         default="en",
-        help="Language code for transcription (default: en). Use 'auto' for Whisper language auto-detection. Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
+        help="Language code for transcription (default: en). Use 'auto' for Whisper language auto-detection. Voxtral supports: en, es, fr, pt, hi, de, nl, it. Cohere supports: "
+        + ", ".join(sorted(COHERE_LANGUAGES))
+        + " (no auto-detect). Whisper supports 99 languages.",
     )
 
     parser.add_argument(
@@ -594,6 +912,37 @@ Examples:
         "--chunked",
         action="store_true",
         help="Faster chunked transcription for long recordings (Whisper only); may lose accuracy at chunk boundaries. Default is sequential long-form processing. Ignored for Voxtral models.",
+    )
+
+    parser.add_argument(
+        "--diarize",
+        action="store_true",
+        help="Label speakers ('who said what') using pyannote speaker diarization. "
+        f"Uses {DIARIZATION_MODEL_ID}, a gated model: accept its terms on the HF Hub "
+        "and authenticate with --hf-token / HF_TOKEN / 'huggingface-cli login' for "
+        "the first download, or pass --diarization-path for fully offline use. "
+        "Note: files already transcribed without diarization are skipped unless "
+        "--all-audio is used.",
+    )
+
+    parser.add_argument(
+        "--num-speakers",
+        type=int,
+        default=None,
+        help="Exact number of speakers in the recordings, if known (improves diarization). Default: detect automatically.",
+    )
+
+    parser.add_argument(
+        "--hf-token",
+        default=None,
+        help="Hugging Face access token for downloading the gated diarization model. Falls back to the HF_TOKEN environment variable or a cached 'huggingface-cli login'.",
+    )
+
+    parser.add_argument(
+        "--diarization-path",
+        type=Path,
+        default=None,
+        help=f"Path to a local download of {DIARIZATION_MODEL_ID} for fully offline diarization (see the model card's 'Offline use' section). No token or internet needed.",
     )
 
     parser.add_argument(
@@ -626,6 +975,10 @@ Examples:
             language = "en"
             max_new_tokens = 400
             chunked = False
+            diarize = False
+            num_speakers = None
+            hf_token = None
+            diarization_path = None
             input_path = Path(__file__).parent.parent / "audio"
             output_path = Path(__file__).parent.parent / "output"
 
@@ -637,6 +990,16 @@ Examples:
             "Warning: Whisper models have a maximum token limit of 448. Setting max_new_tokens to 448."
         )
         args.max_new_tokens = 448
+
+    # Validate language for Cohere models (no auto-detect, 14 languages)
+    if (
+        AVAILABLE_MODELS[args.model]["type"] == "cohere"
+        and args.language not in COHERE_LANGUAGES
+    ):
+        parser.error(
+            f"Cohere models do not support language '{args.language}'. "
+            f"Choose one of: {', '.join(sorted(COHERE_LANGUAGES))}"
+        )
 
     # Ensure output directory exists
     args.output_path.mkdir(parents=True, exist_ok=True)
@@ -653,6 +1016,17 @@ Examples:
 
     # Load the specified model
     processor, model, model_id, model_type = load_model(args.model, device)
+
+    # Load the diarization pipeline once, if requested
+    diarization_pipeline = None
+    record_model_id = model_id
+    if args.diarize:
+        print("Loading speaker diarization pipeline...")
+        diarization_pipeline = load_diarization_pipeline(
+            device, hf_token=args.hf_token, model_path=args.diarization_path
+        )
+        record_model_id = f"{model_id} + {DIARIZATION_MODEL_ID}"
+        print("Diarization pipeline loaded successfully!")
 
     # Get output file path
     output_file = get_output_filename(args.format, args.output_path)
@@ -699,18 +1073,35 @@ Examples:
         try:
             print(f"File size: {file_size} bytes ({file_size / 1024:.1f} KB)")
 
-            # Transcribe audio
-            decoded_outputs, transcription_time, started_at = transcribe_audio(
-                audio_file,
-                processor,
-                model,
-                device,
-                model_id,
-                model_type,
-                args.language,
-                args.max_new_tokens,
-                chunked=args.chunked,
-            )
+            # Transcribe audio (with speaker labels when --diarize is set)
+            if diarization_pipeline is not None:
+                decoded_outputs, transcription_time, started_at = (
+                    transcribe_with_diarization(
+                        audio_file,
+                        diarization_pipeline,
+                        processor,
+                        model,
+                        device,
+                        model_id,
+                        model_type,
+                        args.language,
+                        args.max_new_tokens,
+                        chunked=args.chunked,
+                        num_speakers=args.num_speakers,
+                    )
+                )
+            else:
+                decoded_outputs, transcription_time, started_at = transcribe_audio(
+                    audio_file,
+                    processor,
+                    model,
+                    device,
+                    model_id,
+                    model_type,
+                    args.language,
+                    args.max_new_tokens,
+                    chunked=args.chunked,
+                )
 
             # Combine all transcription outputs into a single text
             transcription_text = " ".join(decoded_outputs).strip()
@@ -729,7 +1120,7 @@ Examples:
                 file_size,
                 transcription_time,
                 transcription_text,
-                model_id,
+                record_model_id,
                 started_at,
             )
             new_records.append(record)

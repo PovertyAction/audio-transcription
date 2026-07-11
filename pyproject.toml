@@ -16,18 +16,21 @@ dependencies = [
     "jupytext>=1.17.2",
     "librosa>=0.11.0",
     "mistral-common[audio]>=1.11.5",
-    "moshi>=0.2.11",
     "pandas>=2.2.3",
     "polars>=1.17.1",
+    "pyannote-audio>=4.0",
     "pyarrow>=21.0.0",
     "rich>=14.0.0",
     "scipy>=1.16.0",
     "seaborn>=0.13.2",
+    "sentencepiece>=0.2.1",
     "soundfile>=0.13.1",
     "streamlit>=1.59.0",
     "torch>=2.7.1",
-    "torchaudio>=2.7.1",
-    "transformers>=4.53.2",
+    # torchaudio's native extension must match the installed torch version
+    # (mismatched pairs fail to import on Windows)
+    "torchaudio>=2.7.1,==2.9.*",
+    "transformers>=5.4,<6",
 ]
 
 [dependency-groups]

@@ -63,6 +63,8 @@ class TestTranscriptionCore:
             sampling_rate=16000,
             return_tensors="pt",
             return_attention_mask=True,
+            truncation=True,
+            padding=True,
         )
         mock_model.generate.assert_called_once()
         # Just verify that batch_decode was called with correct arguments structure
