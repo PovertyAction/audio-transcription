@@ -147,6 +147,9 @@ def transcribe_upload(
     chunked: bool = False,
     diarization_pipeline=None,
     num_speakers: int | None = None,
+    refine: bool = False,
+    ollama_model: str | None = None,
+    ollama_url: str | None = None,
 ) -> dict:
     """Transcribe one uploaded file and return a transcription record."""
     data = uploaded_file.getvalue()
@@ -157,20 +160,26 @@ def transcribe_upload(
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(data)
         tmp_path = Path(tmp.name)
+    refined = False
     try:
         if diarization_pipeline is not None:
-            decoded_outputs, elapsed_time, started_at = ta.transcribe_with_diarization(
-                tmp_path,
-                diarization_pipeline,
-                processor,
-                model,
-                device,
-                model_id,
-                model_type,
-                language,
-                max_new_tokens,
-                chunked=chunked,
-                num_speakers=num_speakers,
+            decoded_outputs, elapsed_time, started_at, refined = (
+                ta.transcribe_with_diarization(
+                    tmp_path,
+                    diarization_pipeline,
+                    processor,
+                    model,
+                    device,
+                    model_id,
+                    model_type,
+                    language,
+                    max_new_tokens,
+                    chunked=chunked,
+                    num_speakers=num_speakers,
+                    refine=refine,
+                    ollama_model=ollama_model or ta.OLLAMA_DEFAULT_MODEL,
+                    ollama_url=ollama_url or ta.OLLAMA_DEFAULT_URL,
+                )
             )
         else:
             decoded_outputs, elapsed_time, started_at = ta.transcribe_audio(
@@ -191,6 +200,8 @@ def transcribe_upload(
     record_model_id = model_id
     if diarization_pipeline is not None:
         record_model_id = f"{model_id} + {ta.DIARIZATION_MODEL_ID}"
+        if refined:
+            record_model_id += f" + ollama:{ollama_model or ta.OLLAMA_DEFAULT_MODEL}"
     file_id = ta.generate_file_id(uploaded_file.name, len(data))
     return ta.create_transcription_record(
         uploaded_file.name,
@@ -281,6 +292,9 @@ def render_sidebar() -> dict:
     num_speakers = None
     hf_token = ""
     diarization_path = ""
+    refine = False
+    ollama_model = ta.OLLAMA_DEFAULT_MODEL
+    ollama_url = ta.OLLAMA_DEFAULT_URL
     diarize = st.sidebar.toggle(
         "Multiple speakers (diarization)",
         value=False,
@@ -303,6 +317,26 @@ def render_sidebar() -> dict:
             "diarization accuracy.",
         )
         num_speakers = int(num_speakers_input) or None
+        refine = st.sidebar.toggle(
+            "Refine with local LLM (Ollama)",
+            value=False,
+            help="Rewrite the diarized transcript with a local LLM so the "
+            "wording matches a full-quality transcription. Requires Ollama "
+            "(ollama.com) running locally with the model pulled. Falls back "
+            "to the unrefined transcript if Ollama is unavailable.",
+        )
+        if refine:
+            ollama_model = st.sidebar.text_input(
+                "Ollama model",
+                value=ta.OLLAMA_DEFAULT_MODEL,
+                help="Any instruct model served by your local Ollama — "
+                "install with 'ollama pull <model>'.",
+            ).strip()
+            ollama_url = st.sidebar.text_input(
+                "Ollama URL",
+                value=ta.OLLAMA_DEFAULT_URL,
+                help="Base URL of the local Ollama server.",
+            ).strip()
         diarization_path = st.sidebar.text_input(
             "Local model directory (offline use)",
             value="",
@@ -357,6 +391,9 @@ def render_sidebar() -> dict:
         "num_speakers": num_speakers,
         "hf_token": hf_token,
         "diarization_path": diarization_path,
+        "refine": refine,
+        "ollama_model": ollama_model,
+        "ollama_url": ollama_url,
         "device": device,
     }
 
@@ -393,7 +430,10 @@ def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> Non
 
     for i, uploaded_file in enumerate(uploads):
         file_id = ta.generate_file_id(uploaded_file.name, uploaded_file.size)
-        diar_suffix = "diar" if settings["diarize"] else "plain"
+        if settings["diarize"]:
+            diar_suffix = "diar-refined" if settings["refine"] else "diar"
+        else:
+            diar_suffix = "plain"
         result_key = (
             f"{file_id}:{settings['model_name']}:{settings['language']}:{diar_suffix}"
         )
@@ -422,6 +462,9 @@ def run_transcriptions(uploads: list, settings: dict, retranscribe: bool) -> Non
                 chunked=settings["chunked"],
                 diarization_pipeline=diarization_pipeline,
                 num_speakers=settings["num_speakers"],
+                refine=settings["refine"],
+                ollama_model=settings["ollama_model"],
+                ollama_url=settings["ollama_url"],
             )
         except Exception as exc:  # noqa: BLE001 - keep the batch going
             st.error(
