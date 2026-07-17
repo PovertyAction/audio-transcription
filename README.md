@@ -89,6 +89,11 @@ uv run python src/transcribe_audio.py [OPTIONS]
 - `--diarize`: Label speakers ("who said what") with pyannote speaker
   diarization (see [Speaker Diarization](#speaker-diarization))
 - `--num-speakers N`: Exact number of speakers, if known (improves diarization)
+- `--refine`: Rewrite the diarized transcript with a local LLM (Ollama) so the
+  wording matches a full-quality transcription; requires `--diarize` (see
+  [Speaker Diarization](#speaker-diarization))
+- `--ollama-model MODEL`: Ollama model for `--refine` (default: `qwen3.5:4b`)
+- `--ollama-url URL`: Ollama server URL (default: `http://localhost:11434`)
 - `--hf-token TOKEN`: Hugging Face token for downloading gated models (falls
   back to the `HF_TOKEN` environment variable or `huggingface-cli login`)
 - `--diarization-path PATH`: Local download of the diarization model for fully
@@ -222,8 +227,8 @@ Check your login status with `uv run hf auth whoami`.
 
 Add `--diarize` (CLI) or switch on **Multiple speakers (diarization)** in the
 web app to label who said what. Diarization finds speaker turns with
-[pyannote](https://hf.co/pyannote/speaker-diarization-community-1), then
-transcribes each turn with the selected model, producing transcripts like:
+[pyannote](https://hf.co/pyannote/speaker-diarization-community-1), then pairs
+them with the transcription, producing transcripts like:
 
 ```text
 SPEAKER_01: Thank you for joining. Let's begin with introductions.; SPEAKER_00: My name is ...; SPEAKER_01: Great, first question: ...
@@ -233,6 +238,52 @@ Consecutive turns by the same speaker are concatenated into a single turn, so
 the transcript alternates speaker by speaker (any number of speakers). Turns are
 separated by `"; "` and the whole transcript is one line --- the CSV/JSON
 writers quote and escape it automatically.
+
+**How the transcription is paired with the speaker turns:**
+
+- **Whisper models**: the full recording is transcribed once with segment
+  timestamps, and each segment is assigned a speaker by overlapping it with the
+  pyannote turns. The transcript wording is therefore identical to a plain
+  (non-diarized) Whisper run --- diarization no longer costs any text quality.
+- **Cohere and Voxtral models**: these models don't emit timestamps, so each
+  speaker turn is sliced out of the audio and transcribed separately. Short,
+  out-of-context slices reduce text quality --- use `--refine` (below) to fix
+  the wording with a local LLM.
+
+**Optional: `--refine` --- fix diarized wording with a local LLM (Ollama)**
+
+`--refine` additionally transcribes the full recording at normal quality, then
+asks a local LLM served by [Ollama](https://ollama.com) to rewrite the
+speaker-labeled transcript so its wording matches the full-quality transcript.
+Everything runs locally --- no transcript content leaves the machine.
+
+One-time setup:
+
+```bash
+# 1. Install Ollama from https://ollama.com (or: winget install Ollama.Ollama)
+# 2. Pull the default model (any instruct model works; pick your favorite)
+ollama pull qwen3.5:4b
+# 3. Make sure the server is running (the desktop app, or: ollama serve)
+```
+
+Usage:
+
+```bash
+uv run python src/transcribe_audio.py --model cohere --language en --diarize --refine
+uv run python src/transcribe_audio.py --diarize --refine --ollama-model llama3.2:3b  # different model
+```
+
+Notes on `--refine`:
+
+- If Ollama is unreachable or the model misbehaves, a warning is printed and the
+  **unrefined** diarized transcript is saved --- a run never fails because of
+  refinement. `model_id` records `+ ollama:<model>` only when refinement
+  actually succeeded.
+- Very long recordings are refined in chunks split at speaker-turn boundaries;
+  the pairing of plain text to chunks is proportional and can be slightly
+  imprecise near chunk edges.
+- Most useful with Cohere/Voxtral. With Whisper the diarized wording already
+  matches the plain transcript, so refinement usually changes little.
 
 **One-time setup** --- the pyannote model is gated: follow [Hugging Face Access
 for Gated Models](#hugging-face-access-for-gated-models) (accept the terms on
