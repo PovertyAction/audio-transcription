@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import logging
+import re
 import sys
 import time
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ import librosa
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import requests
 import torch
 from rich.console import Console
 from rich.panel import Panel
@@ -36,6 +38,19 @@ except ImportError:
         "Warning: Voxtral models not available. Run 'uv sync' to install "
         "transformers >=4.54."
     )
+
+# torchcodec ships with pyannote but its native DLLs need FFmpeg, which this
+# project does not require. transformers' ASR pipeline imports torchcodec
+# whenever the package looks installed and crashes if the DLLs are broken -
+# disable the detection when the import fails so the pipeline skips it.
+try:
+    import torchcodec  # noqa: F401
+except Exception:
+    import transformers.pipelines.automatic_speech_recognition as _asr_pipeline_mod
+    import transformers.utils as _tf_utils
+
+    _tf_utils.is_torchcodec_available = lambda: False
+    _asr_pipeline_mod.is_torchcodec_available = lambda: False
 
 # Optional pyannote support for speaker diarization - only import if available.
 # Suppress pyannote's torchcodec/FFmpeg warning: its built-in audio decoding
@@ -62,6 +77,40 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 # model once and point --diarization-path (CLI) / "Local model directory"
 # (GUI) at the local copy - no token or internet needed afterwards.
 DIARIZATION_MODEL_ID = "pyannote/speaker-diarization-community-1"
+
+# Optional LLM refinement of diarized transcripts via a local Ollama server
+# (--refine CLI / "Refine with local LLM" toggle GUI). Fully local: no
+# transcript content leaves the machine.
+OLLAMA_DEFAULT_MODEL = "qwen3.5:4b"
+OLLAMA_DEFAULT_URL = "http://localhost:11434"
+OLLAMA_TIMEOUT_S = 600  # rewriting a long interview on a small LLM is slow
+MAX_REFINE_CHARS = 60_000  # combined transcripts above this get chunked
+
+REFINE_SYSTEM_PROMPT = (
+    "You are a meticulous transcript editor. You merge two versions of the same "
+    "audio transcript: one has accurate text but no speaker labels, the other has "
+    "speaker labels but lower-quality text. You never invent, summarize, or omit "
+    "content, and you never add commentary."
+)
+
+REFINE_USER_PROMPT = """Below are two transcripts of the SAME recording.
+
+ACCURATE TRANSCRIPT (correct wording, no speakers):
+{plain_text}
+
+SPEAKER-LABELED TRANSCRIPT (correct speakers, lower-quality wording):
+{diarized_text}
+
+Rewrite the speaker-labeled transcript so that its wording matches the accurate
+transcript. Rules:
+1. Keep the exact output format: `SPEAKER_XX: text; SPEAKER_YY: text` - speaker
+   turns separated by "; ", everything on a single line.
+2. Keep the speaker labels and the order of turns from the speaker-labeled
+   transcript. Merge consecutive turns only if they have the same speaker.
+3. Take the wording from the accurate transcript wherever the two versions
+   describe the same speech. Do not paraphrase, translate, add, or drop content.
+4. Output ONLY the rewritten transcript - no explanations, headers, or markdown.
+"""
 
 # Languages supported by the Cohere Transcribe model (no auto-detect)
 COHERE_LANGUAGES = {
@@ -752,6 +801,244 @@ def diarize_audio(
     ]
 
 
+def transcribe_whisper_with_timestamps(
+    audio_path: Path,
+    processor,
+    model,
+    device,
+    language: str,
+    chunked: bool = False,
+) -> list[dict]:
+    """Transcribe full audio with Whisper, returning timestamped segments.
+
+    Returns ``[{"start": float, "end": float, "text": str}, ...]``. Because the
+    whole recording is transcribed in one pass, the text quality matches plain
+    (non-diarized) Whisper output. A ``None`` end timestamp on the final
+    segment is replaced with the audio duration; segments without a usable
+    start timestamp or with empty text are dropped. Returns ``[]`` when the
+    pipeline yields no usable segments (the caller falls back to per-turn
+    slicing).
+    """
+    audio, _ = librosa.load(audio_path, sr=16000)
+    duration = len(audio) / 16000
+
+    asr = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+        chunk_length_s=30 if chunked else None,
+        batch_size=(8 if device == "cuda" else 2) if chunked else 1,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        device=device,
+        return_timestamps=True,
+    )
+    generate_kwargs = {}
+    if language and language != "auto":
+        generate_kwargs["language"] = language
+        generate_kwargs["task"] = "transcribe"
+    result = asr(audio, generate_kwargs=generate_kwargs or None)
+
+    segments = []
+    for chunk in result.get("chunks", []):
+        start, end = chunk.get("timestamp") or (None, None)
+        text = (chunk.get("text") or "").strip()
+        if start is None or not text:
+            continue
+        if end is None:
+            end = duration
+        segments.append({"start": float(start), "end": float(end), "text": text})
+    return segments
+
+
+def assign_speakers_to_segments(
+    segments: list[dict],
+    turns: list[tuple[float, float, str]],
+) -> list[tuple[str, str]]:
+    """Assign each timestamped segment a speaker by maximal temporal overlap.
+
+    Segments that fall in a diarization gap are assigned to the nearest turn
+    by midpoint distance. Returns merged ``(speaker, text)`` turns -
+    consecutive segments with the same speaker are concatenated with a space.
+    """
+    speaker_turns: list[tuple[str, str]] = []
+    last_speaker = turns[0][2] if turns else "SPEAKER_00"
+    for seg in segments:
+        best_speaker, best_overlap = None, 0.0
+        for turn_start, turn_end, speaker in turns:
+            overlap = max(
+                0.0, min(seg["end"], turn_end) - max(seg["start"], turn_start)
+            )
+            if overlap > best_overlap:
+                best_overlap, best_speaker = overlap, speaker
+        if best_speaker is None:
+            # Segment falls in a diarization gap: use the nearest turn
+            mid = (seg["start"] + seg["end"]) / 2
+            best_speaker = min(
+                turns,
+                key=lambda t: min(abs(mid - t[0]), abs(mid - t[1])),
+                default=(0.0, 0.0, last_speaker),
+            )[2]
+        last_speaker = best_speaker
+        if speaker_turns and speaker_turns[-1][0] == best_speaker:
+            speaker_turns[-1] = (
+                best_speaker,
+                f"{speaker_turns[-1][1]} {seg['text']}",
+            )
+        else:
+            speaker_turns.append((best_speaker, seg["text"]))
+    return speaker_turns
+
+
+def format_speaker_transcript(speaker_turns: list[tuple[str, str]]) -> str:
+    """Format merged (speaker, text) turns as 'SPEAKER_XX: text; SPEAKER_YY: text'."""
+    return "; ".join(f"{speaker}: {text.strip()}" for speaker, text in speaker_turns)
+
+
+class OllamaError(Exception):
+    """Raised when the Ollama refinement request fails or returns bad output."""
+
+
+def _ollama_num_ctx(prompt_chars: int) -> int:
+    """Pick an Ollama num_ctx that fits the prompt plus the rewritten output.
+
+    ~3 chars/token (conservative for multilingual text); the output is roughly
+    the diarized transcript again, so budget 2x prompt tokens plus headroom,
+    rounded up to the next tier.
+    """
+    needed = (prompt_chars // 3) * 2 + 1024
+    for tier in (8192, 16384, 32768):
+        if needed <= tier:
+            return tier
+    return 32768
+
+
+def _clean_llm_transcript(raw: str) -> str:
+    """Normalize an LLM response back to the single-line SPEAKER_XX format."""
+    text = raw.strip()
+    # Strip Markdown code fences
+    text = re.sub(r"^```[a-zA-Z]*\s*|```$", "", text).strip()
+    # Drop any preamble before the first speaker label
+    first = text.find("SPEAKER_")
+    if first == -1:
+        raise OllamaError("model response did not contain speaker labels")
+    text = text[first:]
+    # Newline-separated turns back to the "; " single-line format
+    text = re.sub(r"\s*\n+\s*(?=SPEAKER_)", "; ", text)
+    return re.sub(r"\s*\n+\s*", " ", text).strip()
+
+
+def _split_diarized_for_refine(diarized_text: str, max_chars: int) -> list[str]:
+    """Split a diarized transcript at turn boundaries into chunks under max_chars."""
+    turns = diarized_text.split("; SPEAKER_")
+    parts = [turns[0]] + [f"SPEAKER_{t}" for t in turns[1:]]
+    chunks: list[str] = []
+    current = ""
+    for part in parts:
+        candidate = f"{current}; {part}" if current else part
+        if current and len(candidate) > max_chars:
+            chunks.append(current)
+            current = part
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def refine_transcript_with_llm(
+    plain_text: str,
+    diarized_text: str,
+    ollama_model: str = OLLAMA_DEFAULT_MODEL,
+    ollama_url: str = OLLAMA_DEFAULT_URL,
+    timeout: float = OLLAMA_TIMEOUT_S,
+) -> str:
+    """Rewrite a rough speaker-labeled transcript using the accurate plain text.
+
+    Sends both transcripts to a local Ollama server and asks the model to keep
+    the speaker structure while adopting the accurate wording. Raises
+    :class:`OllamaError` on connection failure, HTTP error, timeout, or a
+    response without SPEAKER_ labels - the caller falls back to the unrefined
+    transcript. Long inputs are split at turn boundaries and refined in
+    sequential chunks paired with proportional slices of the plain text.
+    """
+    if len(plain_text) + len(diarized_text) > MAX_REFINE_CHARS:
+        diarized_chunks = _split_diarized_for_refine(
+            diarized_text, MAX_REFINE_CHARS // 2
+        )
+        plain_words = plain_text.split()
+        refined_chunks = []
+        consumed = 0.0
+        for chunk in diarized_chunks:
+            fraction = len(chunk) / len(diarized_text)
+            start_word = int(consumed * len(plain_words))
+            end_word = min(
+                len(plain_words), int((consumed + fraction) * len(plain_words))
+            )
+            consumed += fraction
+            plain_slice = " ".join(plain_words[start_word:end_word])
+            refined_chunks.append(
+                refine_transcript_with_llm(
+                    plain_slice, chunk, ollama_model, ollama_url, timeout
+                )
+            )
+        return "; ".join(refined_chunks)
+
+    user_prompt = REFINE_USER_PROMPT.format(
+        plain_text=plain_text, diarized_text=diarized_text
+    )
+    body = {
+        "model": ollama_model,
+        "messages": [
+            {"role": "system", "content": REFINE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        # Thinking models (qwen3+, etc.) can spend their whole token budget
+        # on chain-of-thought and return empty content for long transcripts -
+        # this is a mechanical rewrite, so disable thinking.
+        "think": False,
+        "options": {
+            "num_ctx": _ollama_num_ctx(len(REFINE_SYSTEM_PROMPT) + len(user_prompt)),
+            "temperature": 0.1,
+        },
+    }
+    try:
+        response = requests.post(
+            f"{ollama_url.rstrip('/')}/api/chat", json=body, timeout=timeout
+        )
+        if response.status_code == 400 and "think" in response.text.lower():
+            # Older Ollama servers / non-thinking models may reject the field
+            body.pop("think", None)
+            response = requests.post(
+                f"{ollama_url.rstrip('/')}/api/chat", json=body, timeout=timeout
+            )
+    except requests.exceptions.ConnectionError as e:
+        raise OllamaError(
+            f"Could not reach Ollama at {ollama_url}. Install it from "
+            f"https://ollama.com, run 'ollama pull {ollama_model}', and make "
+            "sure the server is running ('ollama serve' or the desktop app)."
+        ) from e
+    except requests.exceptions.Timeout as e:
+        raise OllamaError(
+            f"Ollama request timed out after {timeout:.0f}s - try a smaller "
+            "--ollama-model or a shorter recording."
+        ) from e
+
+    if response.status_code == 404:
+        raise OllamaError(
+            f"Ollama model '{ollama_model}' is not installed - run "
+            f"'ollama pull {ollama_model}'."
+        )
+    try:
+        response.raise_for_status()
+        content = response.json()["message"]["content"]
+    except Exception as e:
+        raise OllamaError(f"Unexpected Ollama response: {e}") from e
+
+    return _clean_llm_transcript(content)
+
+
 def transcribe_with_diarization(
     audio_path: Path,
     diarization_pipeline,
@@ -764,17 +1051,27 @@ def transcribe_with_diarization(
     max_new_tokens: int,
     chunked: bool = False,
     num_speakers: int | None = None,
+    refine: bool = False,
+    ollama_model: str = OLLAMA_DEFAULT_MODEL,
+    ollama_url: str = OLLAMA_DEFAULT_URL,
 ):
     """Transcribe audio with speaker labels ("who said what").
 
-    Runs pyannote diarization to find speaker turns, transcribes each turn
-    with the selected model, and returns the same
-    ``(decoded_outputs, elapsed_time, started_at)`` contract as
-    :func:`transcribe_audio`. The single decoded output is a one-line
-    transcript of ``SPEAKER_XX: text`` turns separated by ``"; "``, with
-    consecutive turns by the same speaker concatenated into one turn
-    (speakers alternate as the conversation goes back and forth). Falls back
-    to plain transcription if no speaker turns are found.
+    Runs pyannote diarization to find speaker turns and returns
+    ``(decoded_outputs, elapsed_time, started_at, refined)``, where the single
+    decoded output is a one-line transcript of ``SPEAKER_XX: text`` turns
+    separated by ``"; "`` (consecutive same-speaker turns concatenated).
+
+    Whisper models transcribe the FULL recording once with segment timestamps
+    and assign speakers by temporal overlap with the pyannote turns, so the
+    text quality matches plain Whisper output. Cohere and Voxtral models emit
+    no timestamps, so each speaker turn is sliced and transcribed separately.
+
+    When ``refine`` is True, the diarized transcript is additionally rewritten
+    by a local Ollama LLM using a full-quality plain transcript as reference;
+    on any Ollama failure a warning is printed and the unrefined transcript is
+    returned (``refined`` is False). Falls back to plain transcription if no
+    speaker turns are found.
     """
     import os
     import tempfile
@@ -798,26 +1095,72 @@ def transcribe_with_diarization(
             chunked=chunked,
         )
         elapsed_time = time.perf_counter() - start_time
-        return decoded_outputs, elapsed_time, started_at
+        return decoded_outputs, elapsed_time, started_at, False
 
-    audio_data, sample_rate = librosa.load(audio_path, sr=16000)
-    # (speaker, text) per turn; consecutive same-speaker turns merge into one
     speaker_turns: list[tuple[str, str]] = []
-    for turn_start, turn_end, speaker in turns:
-        segment = audio_data[
-            int(turn_start * sample_rate) : int(turn_end * sample_rate)
-        ]
-        if segment.size == 0:
-            continue
+    plain_text = None
+    use_slicing = model_type != "whisper"
 
-        # Write the slice to a temp WAV (closed before use for Windows) so
-        # every model type can transcribe it through transcribe_audio().
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-            sf.write(temp_file.name, segment, sample_rate)
-            temp_segment_path = Path(temp_file.name)
-        try:
+    if model_type == "whisper":
+        segments = transcribe_whisper_with_timestamps(
+            audio_path, processor, model, device, language, chunked=chunked
+        )
+        if segments:
+            speaker_turns = assign_speakers_to_segments(segments, turns)
+            # The full-context transcript comes free from the same segments
+            plain_text = " ".join(seg["text"].strip() for seg in segments).strip()
+        else:
+            print(
+                "Warning: Whisper returned no usable timestamps; falling back "
+                "to per-turn transcription."
+            )
+            use_slicing = True
+
+    if use_slicing:
+        audio_data, sample_rate = librosa.load(audio_path, sr=16000)
+        for turn_start, turn_end, speaker in turns:
+            segment = audio_data[
+                int(turn_start * sample_rate) : int(turn_end * sample_rate)
+            ]
+            if segment.size == 0:
+                continue
+
+            # Write the slice to a temp WAV (closed before use for Windows) so
+            # every model type can transcribe it through transcribe_audio().
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                sf.write(temp_file.name, segment, sample_rate)
+                temp_segment_path = Path(temp_file.name)
+            try:
+                decoded_outputs, _, _ = transcribe_audio(
+                    temp_segment_path,
+                    processor,
+                    model,
+                    device,
+                    model_id,
+                    model_type,
+                    language,
+                    max_new_tokens,
+                    chunked=chunked,
+                )
+            finally:
+                os.unlink(temp_segment_path)
+
+            text = " ".join(part.strip() for part in decoded_outputs).strip()
+            if not text:
+                continue
+            if speaker_turns and speaker_turns[-1][0] == speaker:
+                speaker_turns[-1] = (speaker, f"{speaker_turns[-1][1]} {text}")
+            else:
+                speaker_turns.append((speaker, text))
+
+    transcript = format_speaker_transcript(speaker_turns)
+
+    refined = False
+    if refine and transcript:
+        if plain_text is None:
+            # Cohere/Voxtral: run the full-quality plain transcription too
             decoded_outputs, _, _ = transcribe_audio(
-                temp_segment_path,
+                audio_path,
                 processor,
                 model,
                 device,
@@ -827,20 +1170,20 @@ def transcribe_with_diarization(
                 max_new_tokens,
                 chunked=chunked,
             )
-        finally:
-            os.unlink(temp_segment_path)
+            plain_text = " ".join(part.strip() for part in decoded_outputs).strip()
+        try:
+            transcript = refine_transcript_with_llm(
+                plain_text, transcript, ollama_model, ollama_url
+            )
+            refined = True
+        except OllamaError as e:
+            print(
+                f"Warning: LLM refinement failed ({e}); using the unrefined "
+                "diarized transcript."
+            )
 
-        text = " ".join(part.strip() for part in decoded_outputs).strip()
-        if not text:
-            continue
-        if speaker_turns and speaker_turns[-1][0] == speaker:
-            speaker_turns[-1] = (speaker, f"{speaker_turns[-1][1]} {text}")
-        else:
-            speaker_turns.append((speaker, text))
-
-    transcript = "; ".join(f"{speaker}: {text}" for speaker, text in speaker_turns)
     elapsed_time = time.perf_counter() - start_time
-    return [transcript], elapsed_time, started_at
+    return [transcript], elapsed_time, started_at, refined
 
 
 # %%
@@ -867,6 +1210,7 @@ Examples:
   python src/transcribe_audio.py --model voxtral-small --format parquet
   python src/transcribe_audio.py --model cohere --language en --format csv
   python src/transcribe_audio.py --model whisper-small --diarize --num-speakers 2
+  python src/transcribe_audio.py --model cohere --language en --diarize --refine
   python src/transcribe_audio.py --model cohere --diarize --diarization-path ~/models/pyannote-speaker-diarization-community-1
   python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
   python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
@@ -946,6 +1290,28 @@ Examples:
     )
 
     parser.add_argument(
+        "--refine",
+        action="store_true",
+        help="Refine the diarized transcript with a local LLM served by Ollama "
+        "(https://ollama.com): the speaker labels are combined with a "
+        "full-quality transcript of the same recording. Requires --diarize and "
+        "a running Ollama server; falls back to the unrefined transcript with "
+        "a warning if Ollama is unavailable.",
+    )
+
+    parser.add_argument(
+        "--ollama-model",
+        default=OLLAMA_DEFAULT_MODEL,
+        help=f"Ollama model for --refine (default: {OLLAMA_DEFAULT_MODEL}). Install with 'ollama pull <model>'.",
+    )
+
+    parser.add_argument(
+        "--ollama-url",
+        default=OLLAMA_DEFAULT_URL,
+        help=f"Base URL of the Ollama server (default: {OLLAMA_DEFAULT_URL}).",
+    )
+
+    parser.add_argument(
         "--input-path",
         type=Path,
         default=Path(__file__).parent.parent / "audio",
@@ -979,6 +1345,9 @@ Examples:
             num_speakers = None
             hf_token = None
             diarization_path = None
+            refine = False
+            ollama_model = OLLAMA_DEFAULT_MODEL
+            ollama_url = OLLAMA_DEFAULT_URL
             input_path = Path(__file__).parent.parent / "audio"
             output_path = Path(__file__).parent.parent / "output"
 
@@ -990,6 +1359,10 @@ Examples:
             "Warning: Whisper models have a maximum token limit of 448. Setting max_new_tokens to 448."
         )
         args.max_new_tokens = 448
+
+    # --refine only makes sense on top of diarization
+    if args.refine and not args.diarize:
+        parser.error("--refine requires --diarize")
 
     # Validate language for Cohere models (no auto-detect, 14 languages)
     if (
@@ -1074,8 +1447,9 @@ Examples:
             print(f"File size: {file_size} bytes ({file_size / 1024:.1f} KB)")
 
             # Transcribe audio (with speaker labels when --diarize is set)
+            file_model_id = record_model_id
             if diarization_pipeline is not None:
-                decoded_outputs, transcription_time, started_at = (
+                decoded_outputs, transcription_time, started_at, refined = (
                     transcribe_with_diarization(
                         audio_file,
                         diarization_pipeline,
@@ -1088,8 +1462,13 @@ Examples:
                         args.max_new_tokens,
                         chunked=args.chunked,
                         num_speakers=args.num_speakers,
+                        refine=args.refine,
+                        ollama_model=args.ollama_model,
+                        ollama_url=args.ollama_url,
                     )
                 )
+                if refined:
+                    file_model_id = f"{record_model_id} + ollama:{args.ollama_model}"
             else:
                 decoded_outputs, transcription_time, started_at = transcribe_audio(
                     audio_file,
@@ -1120,7 +1499,7 @@ Examples:
                 file_size,
                 transcription_time,
                 transcription_text,
-                record_model_id,
+                file_model_id,
                 started_at,
             )
             new_records.append(record)
