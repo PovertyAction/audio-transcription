@@ -199,6 +199,24 @@ class TestCommandLineArgumentParsing:
 
         mock_load_model.assert_called_once_with("whisper-small", "cpu")
 
+    @patch("src.transcribe_audio.get_audio_files")
+    @patch("src.transcribe_audio.load_model")
+    @patch("src.transcribe_audio.OUTPUT_DIR")
+    @patch("torch.cuda.is_available")
+    def test_refine_requires_diarize(
+        self, mock_cuda, mock_output_dir, mock_load_model, mock_get_audio
+    ):
+        """--refine without --diarize exits with a parser error."""
+        self._setup_mocks(mock_cuda, mock_output_dir, mock_load_model, mock_get_audio)
+
+        with (
+            patch.object(sys, "argv", ["transcribe_audio.py", "--refine"]),
+            pytest.raises(SystemExit),
+        ):
+            main()
+
+        mock_load_model.assert_not_called()
+
     @patch("builtins.print")
     def test_argument_parser_help_contains_formats(self, mock_print):
         """Test that help text contains available formats."""
