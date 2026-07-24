@@ -89,11 +89,6 @@ if VOXTRAL_AVAILABLE:
                 "type": "voxtral",
                 "description": "Voxtral Mini model for multilingual ASR (~3B params)",
             },
-            "voxtral-small": {
-                "id": "mistralai/Voxtral-Small-24B-2507",
-                "type": "voxtral",
-                "description": "Voxtral Small model for high-quality multilingual ASR (~24B params)",
-            },
         }
     )
 
@@ -515,7 +510,7 @@ Examples:
   python src/transcribe_audio.py --model voxtral-mini --format json
   python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb --all-audio
   python src/transcribe_audio.py --model whisper-large-v3 --format duckdb --all-audio --language en
-  python src/transcribe_audio.py --model voxtral-small --format parquet
+  python src/transcribe_audio.py --model voxtral-mini --format parquet
   python src/transcribe_audio.py --input-path /path/to/audio --output-path /path/to/output
   python src/transcribe_audio.py --input-path ~/recordings --output-path ~/results --model whisper-medium
         """,

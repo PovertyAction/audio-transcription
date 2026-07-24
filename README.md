@@ -106,10 +106,9 @@ degrades when audio mixes Yoruba with English or other languages.
 
 For multilingual speech recognition with advanced capabilities:
 
-  | Model           | Description                   | Size        | Use Case                        |
-  | --------------- | ----------------------------- | ----------- | ------------------------------- |
-  | `voxtral-mini`  | Multilingual ASR model        | ~3B params  | Fast multilingual transcription |
-  | `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy      |
+  | Model          | Description            | Size       | Use Case                        |
+  | -------------- | ---------------------- | ---------- | ------------------------------- |
+  | `voxtral-mini` | Multilingual ASR model | ~3B params | Fast multilingual transcription |
 
 **Voxtral Language Support**: Currently supports 8 languages: English (`en`),
 Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`),
