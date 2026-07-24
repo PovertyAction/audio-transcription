@@ -14,6 +14,7 @@ dependencies = [
     "ipykernel>=6.29.5",
     "jupyter>=1.1.1",
     "jupytext>=1.17.2",
+    "langdetect>=1.0.9",
     "librosa>=0.11.0",
     "moshi>=0.2.11",
     "pandas>=2.2.3",
@@ -95,5 +96,5 @@ markers = [
 
 [tool.codespell]
 builtin = "clear,rare,informal,usage,code,names"
-ignore-words-list = "jupyter,ipa"
+ignore-words-list = "jupyter,ipa,ro,te"
 skip = "uv.lock"

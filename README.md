@@ -76,18 +76,31 @@ AVAILABLE_MODELS = {
 
 Choose from different Whisper models based on your speed vs accuracy needs:
 
-  | Model                    | Description                   | Size     | Use Case                                                                       |
-  | ------------------------ | ----------------------------- | -------- | ------------------------------------------------------------------------------ |
-  | `whisper-tiny`           | Fastest model, least accurate | ~39 MB   | Quick testing, real-time                                                       |
-  | `whisper-small`          | Fast model, good accuracy     | ~244 MB  | **Recommended default for testing**                                            |
-  | `whisper-medium`         | Balanced speed/accuracy       | ~769 MB  | High-quality transcription                                                     |
-  | `whisper-large-v3-turbo` | Best accuracy, slower         | ~1550 MB | Best accuracy/speed tradeoff **Recommended default for project transcription** |
-  | `whisper-large-v3`       | Best accuracy, much slower    | ~1550 MB | Maximum quality needed                                                         |
+  | Model                    | Description                         | Size     | Use Case                                                                                  |
+  | ------------------------ | ----------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+  | `whisper-tiny`           | Fastest model, least accurate       | ~39 MB   | Quick testing, real-time                                                                  |
+  | `whisper-small`          | Fast model, good accuracy           | ~244 MB  | **Recommended default for testing**                                                       |
+  | `whisper-medium`         | Balanced speed/accuracy             | ~769 MB  | High-quality transcription                                                                |
+  | `whisper-large-v3-turbo` | Best accuracy, slower               | ~1550 MB | Best accuracy/speed tradeoff **Recommended default for project transcription**            |
+  | `whisper-large-v3`       | Best accuracy, much slower          | ~1550 MB | Maximum quality needed                                                                    |
+  | `yoruba-asr`             | Whisper Small fine-tuned for Yoruba | ~244 MB  | Yoruba-only transcription ([NCAIR1/Yoruba-ASR](https://huggingface.co/NCAIR1/Yoruba-ASR)) |
 
 **Whisper Language Support**: Supports 99 languages including English, Spanish,
 French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO
 639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`,
 `hi`).
+
+**`yoruba-asr` Language Support**: Specialized for Yoruba (`yo`) only; accuracy
+degrades when audio mixes Yoruba with English or other languages.
+
+> **Note**: `yoruba-asr`
+> ([NCAIR1/Yoruba-ASR](https://huggingface.co/NCAIR1/Yoruba-ASR)) is a gated
+> model. Request access on the model page while logged in to Hugging Face, then
+> authenticate locally before running it:
+>
+> ```bash
+> uv run hf auth login
+> ```
 
 #### Voxtral Models (Mistral AI) - Optional
 

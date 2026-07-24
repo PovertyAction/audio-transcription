@@ -73,6 +73,11 @@ AVAILABLE_MODELS = {
         "type": "whisper",
         "description": "Best Whisper accuracy, much slower",
     },
+    "yoruba-asr": {
+        "id": "NCAIR1/Yoruba-ASR",
+        "type": "whisper",
+        "description": "Whisper Small fine-tuned for Yoruba speech recognition",
+    },
 }
 
 # Add Voxtral models if available
@@ -425,7 +430,12 @@ def transcribe_audio(
         # Generate transcription with specified max length for Whisper
         with torch.no_grad():
             outputs = model.generate(
-                inputs.input_features, max_new_tokens=max_new_tokens
+                inputs.input_features,
+                max_new_tokens=max_new_tokens,
+                language=language,
+                task="transcribe",
+                repetition_penalty=1.3,
+                no_repeat_ngram_size=3,
             )
 
         decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
@@ -482,6 +492,11 @@ def transcribe_audio(
 # %%
 def main():
     """Process all audio files for transcription."""
+    # Avoid UnicodeEncodeError when transcriptions contain characters the
+    # console's default codepage (e.g. cp1252 on Windows) can't display.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     # Record start time for logging
     run_start_time = datetime.now(UTC)
 
