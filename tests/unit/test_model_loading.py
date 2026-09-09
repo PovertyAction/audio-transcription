@@ -146,7 +146,7 @@ class TestAvailableModelsConfiguration:
             assert isinstance(config["id"], str)
             assert isinstance(config["type"], str)
             assert isinstance(config["description"], str)
-            assert config["type"] in ["whisper", "voxtral"]
+            assert config["type"] in ["whisper", "voxtral", "cohere"]
 
     def test_whisper_models_contains_expected_models(self):
         """Test that AVAILABLE_MODELS contains expected Whisper model variants."""

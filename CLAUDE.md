@@ -21,7 +21,7 @@ The workflow has two entry points:
   in the app. GUI results are session-only downloads and are never appended to
   `output/transcribed_audio.*`.
 
-The project demonstrates transcription capabilities using two models:
+The project demonstrates transcription capabilities using three model families:
 
 - **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
   (supports 99 languages). Recordings over 30 seconds are transcribed in full:
@@ -30,14 +30,64 @@ The project demonstrates transcription capabilities using two models:
 - **Voxtral** (Mistral): `mistralai/Voxtral-Mini-3B-2507` for multilingual
   speech recognition (supports 8 languages: English, Spanish, French,
   Portuguese, Hindi, German, Dutch, Italian)
+- **Cohere** (Cohere Labs): `CohereLabs/cohere-transcribe-03-2026` (\~2B params,
+  14 languages, no auto-detect). Uses native transformers support
+  (`CohereAsrForConditionalGeneration`, requires transformers >=5.4): the
+  processor chunks long recordings into overlapping windows and
+  `processor.decode(..., audio_chunk_index=..., language=...)` reassembles them
+  --- `--max-new-tokens` and `--chunked` are ignored. **Gated model**: accept
+  the terms at hf.co/CohereLabs/cohere-transcribe-03-2026 and authenticate
+  (HF_TOKEN or `huggingface-cli login`) before the first download.
+
+**Speaker diarization** (`--diarize` CLI / "Multiple speakers" toggle GUI) uses
+`pyannote/speaker-diarization-community-1` to find speaker turns, emitting a
+one-line transcript of `SPEAKER_XX: text` turns separated by `"; "` (consecutive
+same-speaker turns are concatenated) embedded in `transcription_text` (no
+output-schema change; `model_id` records the chain). How the transcription is
+paired with the turns depends on the model:
+
+- **Whisper**: full-recording transcription with segment timestamps
+  (`transcribe_whisper_with_timestamps`, via the ASR pipeline with
+  `return_timestamps=True`), speakers assigned per segment by max temporal
+  overlap (`assign_speakers_to_segments`) --- wording identical to plain
+  whisper. Falls back to per-turn slicing if no usable timestamps.
+- **Cohere/Voxtral** (no timestamps): per-turn slicing --- each pyannote turn is
+  sliced to a temp WAV and transcribed separately (lower text quality;
+  `--refine` fixes it).
+
+**LLM refinement** (`--refine`, requires `--diarize`) rewrites the diarized
+transcript with a local Ollama LLM (`refine_transcript_with_llm`, POST
+`/api/chat`, `think: false` --- thinking models otherwise burn the whole token
+budget on long inputs and return empty content) using a full-quality plain
+transcript as reference; on the whisper path the plain text is free (same
+segments), for cohere/voxtral one extra plain `transcribe_audio()` runs. Any
+`OllamaError` (connection/timeout/404/bad format) prints a warning and keeps the
+unrefined transcript; `model_id` gains `+ ollama:<model>` only when refinement
+succeeded. `transcribe_with_diarization` returns a 4-tuple ending in
+`refined: bool`. Defaults: `OLLAMA_DEFAULT_MODEL = "qwen3.5:4b"`,
+`OLLAMA_DEFAULT_URL = "http://localhost:11434"`. `requests` is a direct
+dependency.
+
+The pyannote model is also gated --- one-time HF token setup, or fully offline
+via `--diarization-path` pointing at a local download (see README "Speaker
+Diarization"). Diarization functions live in `transcribe_audio.py`
+(`load_diarization_pipeline`, `diarize_audio`, `transcribe_with_diarization`);
+pyannote is imported behind a `PYANNOTE_AVAILABLE` guard and always receives
+in-memory waveforms. torchcodec (installed with pyannote) has broken DLLs
+without FFmpeg; `transcribe_audio.py` force-disables transformers' torchcodec
+detection at import so the ASR pipeline skips it.
 
 ## Dependencies and Environment Setup
 
 - Uses `uv` for Python environment management and dependency resolution
 - Requires Python >=3.12 (NOT 3.13 due to dependency constraints)
-- Key ML dependencies: `torch`, `torchaudio`, `transformers>=4.53.2`, `librosa`,
-  `soundfile`
-- Audio processing: `accelerate>=1.9.0`, `moshi>=0.2.11`, `scipy>=1.16.0`
+- Key ML dependencies: `torch`, `torchaudio`, `transformers>=5.4` (needed for
+  native Cohere ASR; do NOT downgrade below 5.4), `librosa`, `soundfile`
+- Audio processing: `accelerate>=1.9.0`, `scipy>=1.16.0` (`moshi` was removed:
+  unused, and it blocked the transformers 5.x upgrade)
+- Diarization: `pyannote-audio>=4.0`. Note: `torchaudio` is pinned to `==2.9.*`
+  because its native extension must match the installed torch version
+  (mismatched pairs fail to import on Windows)
 - Data processing: `pandas>=2.2.3`, `polars>=1.17.1`, `duckdb>=1.1.3`
 - Notebooks: `jupyter>=1.1.1`, `jupytext>=1.17.2`, `ipykernel>=6.29.5`
 
@@ -67,11 +117,11 @@ The project demonstrates transcription capabilities using two models:
 
 ### Special Dependencies
 
-Voxtral models are supported by stable HuggingFace transformers (>=4.54), which
-is pinned in `uv.lock` --- no extra installation steps are required. The
-historical workaround
-(`uv pip install git+https://github.com/huggingface/transformers`) is obsolete
-and was reverted by every `uv sync` anyway.
+The project requires transformers >=5.4 (currently 5.13 in `uv.lock`): native
+Cohere ASR support needs it, and Voxtral and Whisper are verified working there.
+Note that transformers 5.x's built-in audio loading uses torchcodec (broken on
+this Windows setup without FFmpeg DLLs), so all audio is loaded with librosa and
+passed as numpy arrays --- never pass file paths to processors.
 
 To confirm Voxtral models are available:
 
@@ -127,6 +177,17 @@ uv run python src/transcribe_audio.py --max-new-tokens 200  # Shorter outputs
 
 # Combined options (Voxtral supports more tokens)
 uv run python src/transcribe_audio.py --model voxtral-mini --language de --max-new-tokens 600
+
+# Cohere transcription (explicit language required; long-form handled internally)
+uv run python src/transcribe_audio.py --model cohere --language en
+
+# Speaker diarization (any model; gated pyannote model needs one-time HF setup)
+uv run python src/transcribe_audio.py --model whisper-small --diarize --num-speakers 2
+uv run python src/transcribe_audio.py --diarize --diarization-path ~/models/pyannote-speaker-diarization-community-1  # offline
+
+# Diarization + local-LLM refinement (Ollama running, model pulled)
+uv run python src/transcribe_audio.py --model cohere --language en --diarize --refine
+uv run python src/transcribe_audio.py --diarize --refine --ollama-model llama3.2:3b
 
 # Custom input and output directories
 uv run python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
@@ -195,8 +256,8 @@ Supports Windows, macOS, and Linux with platform-specific installation commands:
 ### Dependencies
 
 - **Python version constraint**: Stick to Python 3.12 (avoid 3.13)
-- **Special model requirements**: Voxtral models need transformers >=4.54
-  (satisfied by uv.lock)
+- **Special model requirements**: transformers >=5.4 (native Cohere ASR;
+  satisfied by uv.lock)
 - **GPU support**: torch/torchaudio come from the PyTorch cu128 index on
   Windows/Linux (see `[tool.uv.sources]` in pyproject.toml); CUDA wheels fall
   back to CPU on machines without an NVIDIA GPU
