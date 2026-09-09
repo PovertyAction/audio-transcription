@@ -28,6 +28,35 @@ uv run python src/transcribe_audio.py --model whisper-tiny --format json
 uv run python src/transcribe_audio.py --model whisper-tiny --format duckdb
 ```
 
+### Web App (GUI)
+
+If you prefer not to use the command line, launch the Streamlit web app:
+
+```bash
+just app
+# or directly:
+uv run streamlit run src/app.py
+```
+
+The app opens in your browser (default: <http://localhost:8501>) and lets you:
+
+- **Upload audio files** (mp3, wav, flac, m4a, ogg) --- multiple files at once
+- **Choose a model** --- Whisper models, plus Voxtral models when available
+- **Set the audio language** --- Whisper offers auto-detect; Voxtral requires an
+  explicit language
+- **Adjust max tokens** for longer or shorter transcripts
+- **Fast chunked mode** (Whisper) --- speed up long recordings by transcribing
+  overlapping 30-second chunks in parallel, at a slight accuracy cost
+- **Play back audio and read transcripts** in the browser
+- **Download results** as CSV or JSON
+
+Notes:
+
+- GUI results are session-only downloads; they are **not** appended to the
+  shared `output/transcribed_audio.*` files used by the CLI.
+- Speaker diarization (labeling who said what in multi-speaker recordings) is
+  **coming soon** --- the toggle in the app is a placeholder for now.
+
 ### Command Line Interface
 
 The transcription script supports several command-line options:
@@ -41,10 +70,16 @@ uv run python src/transcribe_audio.py [OPTIONS]
 - `--model MODEL`: Choose the transcription model - Whisper or Voxtral (default:
   `whisper-small`)
 - `--format FORMAT`: Output format for results (default: `csv`)
-- `--language LANGUAGE`: Language code for transcription (default: `en`).
-  Whisper supports 99 languages, Voxtral supports 8.
+- `--language LANGUAGE`: Language code for transcription (default: `en`). Use
+  `auto` for Whisper language auto-detection. Whisper supports 99 languages,
+  Voxtral supports 8.
 - `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default:
-  `400`). Whisper models have a maximum limit of 448 tokens.
+  `400`). Whisper models have a maximum limit of 448 tokens; for recordings over
+  30 seconds the limit applies per 30-second segment.
+- `--chunked`: Faster chunked transcription for long recordings (Whisper only).
+  May lose accuracy at chunk boundaries. Without this flag, recordings over 30
+  seconds use sequential long-form processing (slower, most accurate). Either
+  way the full recording is transcribed.
 - `--input-path PATH`: Directory containing audio files (default: `./audio`)
 - `--output-path PATH`: Directory for output files (default: `./output`)
 - `--all-audio`: Re-process all files, including previously transcribed ones
@@ -76,13 +111,13 @@ AVAILABLE_MODELS = {
 
 Choose from different Whisper models based on your speed vs accuracy needs:
 
-  | Model                    | Description                   | Size     | Use Case                                                                       |
-  | ------------------------ | ----------------------------- | -------- | ------------------------------------------------------------------------------ |
-  | `whisper-tiny`           | Fastest model, least accurate | ~39 MB   | Quick testing, real-time                                                       |
-  | `whisper-small`          | Fast model, good accuracy     | ~244 MB  | **Recommended default for testing**                                            |
-  | `whisper-medium`         | Balanced speed/accuracy       | ~769 MB  | High-quality transcription                                                     |
-  | `whisper-large-v3-turbo` | Best accuracy, slower         | ~1550 MB | Best accuracy/speed tradeoff **Recommended default for project transcription** |
-  | `whisper-large-v3`       | Best accuracy, much slower    | ~1550 MB | Maximum quality needed                                                         |
+  | Model                    | Description                         | Size     | Use Case                   |
+  | ------------------------ | ----------------------------------- | -------- | -------------------------- |
+  | `whisper-tiny`           | Fastest model, least accurate       | ~39 MB   | Quick testing, real-time   |
+  | `whisper-small`          | Fast model, good accuracy           | ~244 MB  | **Recommended default**    |
+  | `whisper-medium`         | Balanced speed/accuracy             | ~769 MB  | High-quality transcription |
+  | `whisper-large-v3`       | Most accurate, slowest              | ~3090 MB | Maximum quality needed     |
+  | `whisper-large-v3-turbo` | Near large-v3 accuracy, much faster | ~1550 MB | High quality with speed    |
 
 **Whisper Language Support**: Supports 99 languages including English, Spanish,
 French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO
@@ -102,8 +137,8 @@ For multilingual speech recognition with advanced capabilities:
 Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`),
 Dutch (`nl`), and Italian (`it`).
 
-> **Note**: Voxtral models require additional dependencies. See [Voxtral
-> Setup](#voxtral-model-setup) below.
+> **Note**: Voxtral dependencies are included in the standard environment. See
+> [Voxtral Model Setup](#voxtral-model-setup) below to verify availability.
 
 ### Output Formats
 
@@ -239,11 +274,27 @@ a1b2c3d4e5f6g7h8,sample.mp3,1048576,2.34,"Hello world, this is a test recording.
 
 ### Performance and GPU Support
 
+**GPU-enabled PyTorch:**
+
+On Windows and Linux, the project installs CUDA-enabled PyTorch wheels (CUDA
+12.8) from the official PyTorch index, so an NVIDIA GPU is used automatically
+when present. On machines without an NVIDIA GPU the same wheels fall back to
+CPU. macOS uses the standard PyPI wheels.
+
+To check whether the GPU is visible to PyTorch:
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
 **Automatic Device Detection:**
 
 - Uses CUDA GPU if available for faster processing
 - Falls back to CPU automatically
 - Model precision adjusted based on device (float16 for GPU, float32 for CPU)
+- In the web app, the sidebar's **Compute device** selector lets you choose
+  Auto, CPU, or GPU (the GPU option appears only when a CUDA GPU is detected;
+  pick CPU if a larger model runs out of GPU memory)
 
 **Processing Speed Examples:**
 
@@ -299,45 +350,19 @@ uv run python src/transcribe_audio.py --model whisper-small --format json 2>&1 |
 
 ## Voxtral Model Setup
 
-To use Mistral's Voxtral models for multilingual speech recognition, you need to
-install additional dependencies.
+Voxtral models work out of the box: stable HuggingFace transformers (>=4.54) and
+`mistral-common[audio]` are both pinned in `uv.lock`, so a regular `uv sync`
+installs everything Voxtral needs. No extra installation steps are required.
 
-### Prerequisites for Voxtral
+To verify that Voxtral models are available:
 
-Voxtral models require the latest development version of the `transformers`
-library and additional audio processing dependencies.
+```bash
+uv run python -c "from transformers import VoxtralForConditionalGeneration; print('Voxtral OK')"
+```
 
-### Installation Steps
-
-1. **Install development transformers** (required for Voxtral support):
-
-   ```bash
-   uv pip install git+https://github.com/huggingface/transformers
-   ```
-
-2. **Install Mistral audio dependencies**:
-
-   ```bash
-   uv pip install --upgrade "mistral-common[audio]"
-   ```
-
-3. **Activate the environment and verify installation**:
-
-   ```bash
-   source .venv/bin/activate
-   python src/transcribe_audio.py --help | grep -A 10 "Available models:"
-   ```
-
-   You should see both Whisper and Voxtral models listed if installation was
-   successful.
-
-   > **Important**: You must activate the virtual environment with
-   > `source .venv/bin/activate` before testing Voxtral models to ensure proper
-   > dependency resolution.
-   >
-   > **Note**: These extra installation steps may become obsolete once Voxtral
-   > models are available in a future stable release of HuggingFace
-   > transformers.
+You should also see both Whisper and Voxtral models listed in
+`uv run python src/transcribe_audio.py --help` and in the web app's model
+dropdown.
 
 ### Voxtral vs Whisper Comparison
 
@@ -347,7 +372,7 @@ library and additional audio processing dependencies.
   | **Model Size**    | 39MB - 1.5GB           | 3B - 24B parameters                          |
   | **Speed**         | Fast to moderate       | Moderate to slow                             |
   | **Accuracy**      | High for English       | Very high for supported languages            |
-  | **Dependencies**  | Standard transformers  | Development transformers + mistral-common    |
+  | **Dependencies**  | Standard transformers  | Standard transformers + mistral-common       |
   | **Use Case**      | General transcription  | Advanced multilingual ASR                    |
   | **Token Control** | Yes (--max-new-tokens) | Yes (--max-new-tokens)                       |
 
@@ -355,18 +380,11 @@ library and additional audio processing dependencies.
 
 **If Voxtral models don't appear:**
 
-- Ensure you installed the development version of transformers
-- Check that mistral-common[audio] is properly installed
-- Restart your environment after installation
-
-**If you get import errors:**
-
-```bash
-# Clean reinstall
-uv pip uninstall transformers mistral-common
-uv pip install git+https://github.com/huggingface/transformers
-uv pip install --upgrade "mistral-common[audio]"
-```
+- Run `uv sync` to make sure the environment matches `uv.lock`
+- Check that `mistral-common[audio]` is properly installed:
+  `uv run python -c "import mistral_common"`
+- Verify the transformers version is at least 4.54:
+  `uv run python -c "import transformers; print(transformers.__version__)"`
 
 **Performance considerations:**
 
@@ -746,16 +764,13 @@ uv sync
 **Missing cmake:** Audio dependencies require cmake for compilation. Install via
 your system package manager.
 
-**Voxtral Model Issues:** If you encounter issues with the Voxtral model, ensure
-you have the correct version of `uv` and that the model is downloaded correctly:
+**Voxtral Model Issues:** If you encounter issues with the Voxtral model, sync
+the environment to the lockfile (which pins Voxtral-compatible versions of
+`transformers` and `mistral-common[audio]`):
 
 ```bash
 uv sync
-uv pip install git+https://github.com/huggingface/transformers
-uv pip install --upgrade "mistral-common[audio]"
 
 # Or shortcut
 just venv
-source .venv/bin/activate  # On Linux/macOS
-# .venv\Scripts\activate  # On Windows
 ```

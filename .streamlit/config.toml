@@ -1,0 +1,13 @@
+# IPA brand theme
+# Palette: IPA Green + Dark/Light Gray + White + Charcoal ("neutral with
+# structure", recommended for data-heavy layouts). Document font set:
+# Georgia for headlines, Arial for body copy.
+[theme]
+base = "light"
+primaryColor = "#49ac57"             # IPA Green
+backgroundColor = "#ffffff"          # White
+secondaryBackgroundColor = "#f1f2f2" # Light Gray
+textColor = "#414042"                # Charcoal
+borderColor = "#c9c9c8"              # Dark Gray
+font = "Arial, sans-serif"
+headingFont = "Georgia, serif"

@@ -20,6 +20,7 @@ from rich.table import Table
 from transformers import (
     WhisperForConditionalGeneration,
     WhisperProcessor,
+    pipeline,
 )
 
 # Optional Voxtral support - only import if available
@@ -30,7 +31,8 @@ try:
 except ImportError:
     VOXTRAL_AVAILABLE = False
     print(
-        "Warning: Voxtral models not available. Install latest with: uv pip install git+https://github.com/huggingface/transformers"
+        "Warning: Voxtral models not available. Run 'uv sync' to install "
+        "transformers >=4.54."
     )
 
 # Constants
@@ -63,15 +65,15 @@ AVAILABLE_MODELS = {
         "type": "whisper",
         "description": "Balanced Whisper speed/accuracy (~769 MB)",
     },
-    "whisper-large-v3-turbo": {
-        "id": "openai/whisper-large-v3-turbo",
-        "type": "whisper",
-        "description": "Best Whisper accuracy, slower (~1550 MB)",
-    },
     "whisper-large-v3": {
         "id": "openai/whisper-large-v3",
         "type": "whisper",
-        "description": "Best Whisper accuracy, much slower",
+        "description": "Most accurate Whisper model, slowest (~3090 MB)",
+    },
+    "whisper-large-v3-turbo": {
+        "id": "openai/whisper-large-v3-turbo",
+        "type": "whisper",
+        "description": "Near large-v3 accuracy, much faster (~1550 MB)",
     },
 }
 
@@ -275,18 +277,18 @@ def load_model(model_name: str, device: str):
     if model_type == "whisper":
         processor = WhisperProcessor.from_pretrained(model_id)
         model = WhisperForConditionalGeneration.from_pretrained(
-            model_id, torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            model_id, dtype=torch.float16 if device == "cuda" else torch.float32
         )
         model.to(device)
     elif model_type == "voxtral":
         if not VOXTRAL_AVAILABLE:
             raise ValueError(
-                "Voxtral models are not available. Install with: uv pip install git+https://github.com/huggingface/transformers"
+                "Voxtral models are not available. Run 'uv sync' to install transformers >=4.54."
             )
         processor = AutoProcessor.from_pretrained(model_id)
         model = VoxtralForConditionalGeneration.from_pretrained(
             model_id,
-            torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
             device_map=device if device == "cuda" else None,
         )
         if device == "cpu":
@@ -405,30 +407,79 @@ def transcribe_audio(
     model_type: str,
     language: str,
     max_new_tokens: int,
+    chunked: bool = False,
 ):
-    """Transcribe audio file and return decoded outputs, timing, and start timestamp."""
+    """Transcribe audio file and return decoded outputs, timing, and start timestamp.
+
+    Whisper recordings longer than 30 seconds are transcribed in full using
+    sequential long-form generation, or the faster chunked pipeline when
+    ``chunked`` is True. ``chunked`` is ignored for Voxtral models.
+    """
     start_time = time.perf_counter()
     started_at = datetime.now(UTC)
 
     if model_type == "whisper":
         # Load audio file for Whisper
         audio, _ = librosa.load(audio_path, sr=16000)
+        duration = len(audio) / 16000
 
-        # Process audio with Whisper
-        inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
-        inputs = inputs.to(device)
-
-        # Ensure input features match model dtype
-        if device == "cuda":
-            inputs.input_features = inputs.input_features.to(torch.float16)
-
-        # Generate transcription with specified max length for Whisper
-        with torch.no_grad():
-            outputs = model.generate(
-                inputs.input_features, max_new_tokens=max_new_tokens
+        if duration > 30 and chunked:
+            # Fast mode: chunked pipeline with overlapping 30s windows,
+            # batched for throughput. Slightly less accurate at boundaries.
+            asr = pipeline(
+                "automatic-speech-recognition",
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                chunk_length_s=30,
+                batch_size=8 if device == "cuda" else 2,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                device=device,
             )
+            generate_kwargs = {}
+            if language and language != "auto":
+                generate_kwargs["language"] = language
+                generate_kwargs["task"] = "transcribe"
+            result = asr(audio, generate_kwargs=generate_kwargs or None)
+            decoded_outputs = [result["text"]]
+        else:
+            # Process audio with Whisper; request the attention mask explicitly
+            # (Whisper's pad token equals its eos token, so generate() cannot
+            # infer the mask and warns without it). For audio over 30s,
+            # truncation=False/padding="longest" switches generate() into
+            # sequential long-form mode, which transcribes the full recording.
+            long_form = duration > 30
+            inputs = processor(
+                audio,
+                sampling_rate=16000,
+                return_tensors="pt",
+                return_attention_mask=True,
+                truncation=not long_form,
+                padding="longest" if long_form else True,
+            )
+            inputs = inputs.to(device)
 
-        decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
+            # Ensure input features match model dtype
+            if device == "cuda":
+                inputs.input_features = inputs.input_features.to(torch.float16)
+
+            # Force the target language unless "auto" is requested (auto-detect)
+            generate_kwargs = {}
+            if long_form:
+                # Long-form generation needs timestamps; max_new_tokens is
+                # managed per 30s segment internally, so don't pass it here
+                generate_kwargs["return_timestamps"] = True
+            else:
+                generate_kwargs["max_new_tokens"] = max_new_tokens
+            if getattr(inputs, "attention_mask", None) is not None:
+                generate_kwargs["attention_mask"] = inputs.attention_mask
+            if language and language != "auto":
+                generate_kwargs["language"] = language
+                generate_kwargs["task"] = "transcribe"
+            with torch.no_grad():
+                outputs = model.generate(inputs.input_features, **generate_kwargs)
+
+            decoded_outputs = processor.batch_decode(outputs, skip_special_tokens=True)
 
     elif model_type == "voxtral":
         # For Voxtral, we need to load audio with librosa first, then save as temp WAV file
@@ -447,7 +498,7 @@ def transcribe_audio(
 
         try:
             # Process audio with Voxtral using temporary WAV file
-            inputs = processor.apply_transcrition_request(
+            inputs = processor.apply_transcription_request(
                 language=language, audio=temp_audio_path, model_id=model_id
             )
         finally:
@@ -529,14 +580,20 @@ Examples:
     parser.add_argument(
         "--language",
         default="en",
-        help="Language code for transcription (default: en). Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
+        help="Language code for transcription (default: en). Use 'auto' for Whisper language auto-detection. Voxtral supports: en, es, fr, pt, hi, de, nl, it. Whisper supports 99 languages.",
     )
 
     parser.add_argument(
         "--max-new-tokens",
         type=int,
         default=400,
-        help="Maximum number of new tokens to generate (default: 400). Whisper models have a maximum limit of 448 tokens.",
+        help="Maximum number of new tokens to generate (default: 400). Whisper models have a maximum limit of 448 tokens; for recordings over 30 seconds the limit applies per 30-second segment.",
+    )
+
+    parser.add_argument(
+        "--chunked",
+        action="store_true",
+        help="Faster chunked transcription for long recordings (Whisper only); may lose accuracy at chunk boundaries. Default is sequential long-form processing. Ignored for Voxtral models.",
     )
 
     parser.add_argument(
@@ -568,6 +625,7 @@ Examples:
             model = "whisper-small"
             language = "en"
             max_new_tokens = 400
+            chunked = False
             input_path = Path(__file__).parent.parent / "audio"
             output_path = Path(__file__).parent.parent / "output"
 
@@ -651,6 +709,7 @@ Examples:
                 model_type,
                 args.language,
                 args.max_new_tokens,
+                chunked=args.chunked,
             )
 
             # Combine all transcription outputs into a single text

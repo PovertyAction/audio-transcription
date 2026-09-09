@@ -56,15 +56,24 @@ update-reqs:
 # create virtual environment
 venv:
     uv sync
-    uv pip install git+https://github.com/huggingface/transformers
-    uv pip install --upgrade "mistral-common[audio]"
     uv tool install pre-commit
     uv run pre-commit install
-
 
 # launch jupyter lab
 lab:
     uv run jupyter lab
+
+# launch the Streamlit transcription app
+app:
+    uv run streamlit run src/app.py
+
+# Preview the quarto project
+preview-docs:
+    quarto preview
+
+# Build the quarto project
+build-docs:
+    quarto render
 
 # Lint python code
 lint-py:
@@ -147,7 +156,7 @@ pre-commit-run:
 
 [windows]
 pre-install:
-    winget install Casey.Just astral-sh.uv GitHub.cli
+    winget install Casey.Just astral-sh.uv GitHub.cli Gyan.FFmpeg
 
 [linux]
 pre-install:
