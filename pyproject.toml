@@ -30,7 +30,7 @@ dependencies = [
     "torch>=2.7.1",
     # torchaudio's native extension must match the installed torch version
     # (mismatched pairs fail to import on Windows)
-    "torchaudio>=2.7.1,==2.9.*",
+    "torchaudio>=2.9,<2.12",
     "transformers>=5.4,<6",
 ]
 
