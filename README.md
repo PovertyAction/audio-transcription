@@ -1,267 +1,445 @@
 # Audio Transcription Project
 
-Python project for audio transcription using OpenAI Whisper, Mistral Voxtral,
-and Cohere Transcribe models, with optional speaker diarization via pyannote.
+Turn audio recordings into text on your own machine. Pick from OpenAI Whisper,
+Mistral Voxtral, and Cohere Transcribe models, and optionally label who said
+what (speaker diarization with pyannote). Everything runs locally: after the
+models download once, no audio or transcript leaves your computer.
 
-## Usage
+There are two ways to transcribe:
 
-This project provides a command-line tool for transcribing audio files using
-OpenAI's Whisper models, Mistral's Voxtral models, and Cohere's Transcribe
-model. You can transcribe individual files or batch process entire directories
-with support for multiple output formats, and optionally label who said what
-with speaker diarization.
+- **Web app (Streamlit)**: upload files in your browser and download the
+  results. Good if you prefer not to use the command line.
+- **Command line (CLI)**: transcribe a whole folder of recordings in one go and
+  save the results as CSV, JSON, Parquet, or DuckDB.
 
-### Quick Start
+There is also a helper that goes the other way: it reads a written, fictitious
+transcript aloud and saves it as an MP3, so you can try everything without real
+recordings.
 
-After setting up the environment (see [Development setup](#development-set-up)
-below):
+**Contents**
+
+1. [Get set up](#get-set-up)
+2. [Generate demo audio](#generate-demo-audio-optional)
+3. [Use the web app](#use-the-web-app)
+4. [Use the command line](#use-the-command-line)
+5. [Reference](#reference): models, Hugging Face access, speaker diarization,
+   output formats, GPU
+6. [Development](#development): tests, code quality, notebooks, contributing
+7. [Troubleshooting](#troubleshooting)
+
+## Get set up
+
+You need about 15 minutes and a few GB of free disk space (models download on
+first use and are cached).
+
+### Step 1: Install the tools
+
+You need [git](https://git-scm.com), [uv](https://docs.astral.sh/uv/) (manages
+Python and the packages), and [just](https://just.systems) (runs the short
+commands used below). You do **not** need to install Python yourself: uv
+installs the right version (3.12).
 
 ```bash
-# Activate the environment
-uv sync
+# Windows (PowerShell)
+winget install Git.Git astral-sh.uv Casey.Just
 
-# Transcribe all audio files in the audio/ directory to CSV
-uv run python src/transcribe_audio.py
-
-# Or use specific options
-uv run python src/transcribe_audio.py --model whisper-tiny --format json
-
-uv run python src/transcribe_audio.py --model whisper-tiny --format duckdb
+# macOS / Linux (Homebrew)
+brew install git uv just
 ```
 
-### Web App (GUI)
+Close and reopen your terminal afterwards so the new commands are found.
 
-If you prefer not to use the command line, launch the Streamlit web app:
+### Step 2: Download the project
+
+```bash
+git clone https://github.com/PovertyAction/audio-transcription.git
+cd audio-transcription
+```
+
+### Step 3: Install the Python packages
+
+```bash
+uv sync
+```
+
+This creates a `.venv/` folder with Python 3.12 and every dependency. It takes a
+few minutes the first time (PyTorch is large). Re-run it whenever you pull new
+changes.
+
+> Contributors: run `just venv` instead. It does the same and also installs the
+> pre-commit hooks.
+
+### Step 4: Check that it works
+
+```bash
+uv run python src/transcribe_audio.py --help
+```
+
+You should see the list of options and models. Now transcribe the sample
+recordings in `audio/`:
+
+```bash
+uv run python src/transcribe_audio.py --model whisper-tiny
+```
+
+The first run downloads the model (about 40 MB for `whisper-tiny`). The results
+land in `output/transcribed_audio.csv`.
+
+### Step 5 (only for some features): Hugging Face access
+
+Whisper and Voxtral work right away. Three features use **gated** models, which
+need a free [Hugging Face](https://huggingface.co) account and a one-time
+approval:
+
+  | Feature                 | Gated model                                                                                        |
+  | ----------------------- | -------------------------------------------------------------------------------------------------- |
+  | Cohere Transcribe model | [CohereLabs/cohere-transcribe-03-2026](https://hf.co/CohereLabs/cohere-transcribe-03-2026)         |
+  | Speaker diarization     | [pyannote/speaker-diarization-community-1](https://hf.co/pyannote/speaker-diarization-community-1) |
+  | Generating demo audio   | [gradium/phonon-40m-multilingual](https://hf.co/gradium/phonon-40m-multilingual)                   |
+
+For each one you want to use:
+
+1. Open the model page while logged in to Hugging Face and accept the terms.
+
+2. Create a **classic token with the "Read" role** at
+   <https://hf.co/settings/tokens> (fine-grained tokens need extra settings, see
+   [Hugging Face access for gated
+   models](#hugging-face-access-for-gated-models)).
+
+3. Log in once on your machine and paste the token when asked:
+
+   ```bash
+   uv run hf auth login
+   ```
+
+Check with `uv run hf auth whoami`. You only do this once per machine.
+
+### Optional: GPU
+
+On Windows and Linux with an NVIDIA GPU, transcription uses the GPU
+automatically; without one it runs on the CPU (slower, but works). Check with:
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
+## Generate demo audio (optional)
+
+No recordings to try? `src/generate_audio.py` reads a written transcript aloud
+with computer voices and saves an MP3. It supports English (`en`), Spanish
+(`es`, Mexican voices), and French (`fr`), and runs on a normal laptop CPU.
+
+**Before the first run:** accept the terms for
+[gradium/phonon-40m-multilingual](https://hf.co/gradium/phonon-40m-multilingual)
+and log in (see [Step 5](#step-5-only-for-some-features-hugging-face-access)).
+The voices are licensed CC BY-NC 4.0: **non-commercial use only**. Use them for
+fictitious scripts, never to imitate a real person.
+
+### Write a transcript
+
+Use a plain text or Markdown file with one `SPEAKER: text` turn per line:
+
+```text
+# Lines starting with # are skipped
+Interviewer: How long have you been in the savings group?
+Respondent: About a year. My neighbor invited me.
+Interviewer: And how has saving each week gone for you?
+```
+
+- Each line that starts with a label (`Interviewer:`, `SPEAKER_01:`, ...) starts
+  a new turn. Lines without a label continue the previous turn.
+- Each speaker gets their own voice, in order of appearance, alternating female
+  and male.
+- A file with no labels is read by a single voice.
+
+A ready-made Spanish example lives in
+[`examples/entrevista_ficticia.md`](examples/entrevista_ficticia.md).
+
+### Make the MP3
+
+```bash
+just generate-audio examples/entrevista_ficticia.md --language es
+```
+
+This writes `audio/demo/entrevista_ficticia.mp3` (one MP3 per input file, named
+after it). Other options:
+
+```bash
+# Several transcripts at once, into a different folder
+just generate-audio a.txt b.txt --language fr --output-path my-demo-audio
+
+# Pick voices per speaker (names from https://hf.co/gradium/phonon-voices)
+just generate-audio script.md --voices "Interviewer=Easton" "Respondent=Zoey"
+
+# Longer pause between turns (seconds; default 0.6)
+just generate-audio script.md --pause 1.0
+```
+
+Without `just`, use `uv run python src/generate_audio.py ...` with the same
+arguments.
+
+### Transcribe it
+
+The CLI only reads the top level of its input folder, so point it at the demo
+folder:
+
+```bash
+uv run python src/transcribe_audio.py --input-path audio/demo --language es
+```
+
+Or upload the MP3 in the [web app](#use-the-web-app).
+
+## Use the web app
 
 ```bash
 just app
-# or directly:
-uv run streamlit run src/app.py
 ```
 
-The app opens in your browser (default: <http://localhost:8501>) and lets you:
+(Without `just`: `uv run streamlit run src/app.py`.) Your browser opens at
+<http://localhost:8501>. To stop the app, press `Ctrl+C` in the terminal.
 
-- **Upload audio files** (mp3, wav, flac, m4a, ogg) --- multiple files at once
-- **Choose a model** --- Whisper models, the Cohere Transcribe model, plus
-  Voxtral models when available
-- **Set the audio language** --- Whisper offers auto-detect; Voxtral and Cohere
-  require an explicit language
-- **Adjust max tokens** for longer or shorter transcripts (Whisper/Voxtral;
-  Cohere manages output length automatically)
-- **Fast chunked mode** (Whisper) --- speed up long recordings by transcribing
-  overlapping 30-second chunks in parallel, at a slight accuracy cost
-- **Multiple speakers (diarization)** --- label who said what using pyannote
-  speaker diarization (see [Speaker Diarization](#speaker-diarization) for the
-  one-time model access setup)
-- **Play back audio and read transcripts** in the browser
-- **Download results** as CSV or JSON
+**How to transcribe:**
 
-Notes:
+1. **Upload** one or more audio files (mp3, wav, flac, m4a, ogg).
+2. **Pick settings** in the left sidebar:
+   - **Model**: `whisper-small` is a good default. See [Models](#models).
+   - **Language**: Whisper can auto-detect; Voxtral and Cohere need an explicit
+     language.
+   - **Max tokens** (Whisper/Voxtral): raise it if transcripts get cut off.
+   - **Fast chunked mode** (Whisper): faster on long recordings, slightly less
+     accurate.
+   - **Multiple speakers (diarization)**: labels who said what. Needs [Hugging
+     Face access](#step-5-only-for-some-features-hugging-face-access). You can
+     set the number of speakers, turn on LLM refinement (needs
+     [Ollama](#optional---refine-fix-diarized-wording-with-a-local-llm-ollama)),
+     or point to a local copy of the model for offline use.
+   - **Compute device**: Auto, CPU, or GPU. Pick CPU if a large model runs out
+     of GPU memory.
+3. Click **Transcribe**. The first run of each model downloads it, so it takes
+   longer.
+4. **Read and play back** each result on the page, and **download** them as CSV
+   or JSON.
 
-- GUI results are session-only downloads; they are **not** appended to the
-  shared `output/transcribed_audio.*` files used by the CLI.
+Good to know:
 
-### Command Line Interface
+- Results last only for the browser session. Download them before closing the
+  tab. The app never writes to the `output/` folder used by the CLI.
+- Files you already transcribed with the same settings are skipped. Tick
+  **Re-transcribe processed files** to redo them.
+- **Clear model cache** in the sidebar frees memory if you switch between big
+  models.
 
-The transcription script supports several command-line options:
+## Use the command line
+
+The CLI transcribes every audio file in a folder and appends the results to one
+output file:
 
 ```bash
 uv run python src/transcribe_audio.py [OPTIONS]
 ```
 
-**Available Options:**
+With no options it reads `audio/`, uses `whisper-small` in English, and writes
+`output/transcribed_audio.csv`.
 
-- `--model MODEL`: Choose the transcription model - Whisper, Voxtral, or Cohere
-  (default: `whisper-small`)
-- `--format FORMAT`: Output format for results (default: `csv`)
-- `--language LANGUAGE`: Language code for transcription (default: `en`). Use
-  `auto` for Whisper language auto-detection. Whisper supports 99 languages,
-  Voxtral supports 8, Cohere supports 14 (no auto-detect).
-- `--max-new-tokens TOKENS`: Maximum number of tokens to generate (default:
-  `400`). Whisper models have a maximum limit of 448 tokens; for recordings over
-  30 seconds the limit applies per 30-second segment. Ignored for Cohere, which
-  manages output length automatically.
-- `--chunked`: Faster chunked transcription for long recordings (Whisper only).
-  May lose accuracy at chunk boundaries. Without this flag, recordings over 30
-  seconds use sequential long-form processing (slower, most accurate). Either
-  way the full recording is transcribed. (Cohere chunks long recordings
-  internally regardless of this flag.)
-- `--diarize`: Label speakers ("who said what") with pyannote speaker
-  diarization (see [Speaker Diarization](#speaker-diarization))
-- `--num-speakers N`: Exact number of speakers, if known (improves diarization)
-- `--refine`: Rewrite the diarized transcript with a local LLM (Ollama) so the
-  wording matches a full-quality transcription; requires `--diarize` (see
-  [Speaker Diarization](#speaker-diarization))
-- `--ollama-model MODEL`: Ollama model for `--refine` (default: `qwen3.5:4b`)
-- `--ollama-url URL`: Ollama server URL (default: `http://localhost:11434`)
-- `--hf-token TOKEN`: Hugging Face token for downloading gated models (falls
-  back to the `HF_TOKEN` environment variable or `huggingface-cli login`)
-- `--diarization-path PATH`: Local download of the diarization model for fully
-  offline use (no token or internet needed)
-- `--input-path PATH`: Directory containing audio files (default: `./audio`)
-- `--output-path PATH`: **Directory** for output files (default: `./output`).
-  Pass a directory, not a filename --- results are always written inside it as
-  `transcribed_audio.<format>` (e.g. `--output-path ./output/my-project`, not
-  `--output-path ./output/my-project.csv`)
-- `--all-audio`: Re-process all files, including previously transcribed ones
+### Common tasks
 
-### Available Models
+```bash
+# Your own recordings, results in your own folder
+uv run python src/transcribe_audio.py --input-path ~/recordings --output-path ~/transcripts
 
-### Adding New Models
+# Another language (Whisper can also auto-detect with --language auto)
+uv run python src/transcribe_audio.py --language es
 
-All models are defined in `src/transcribe_audio.py` under the `AVAILABLE_MODELS`
-dictionary. You can add new models by following the existing format.
+# Fast test run vs. best quality
+uv run python src/transcribe_audio.py --model whisper-tiny
+uv run python src/transcribe_audio.py --model whisper-large-v3-turbo
 
-```python
-AVAILABLE_MODELS = {
-    "new-model-tagname": { # e.g., "whisper-small"
-        "id": "source/new-model-id",  # HuggingFace model ID
-        "type": "sourcetype",  # e.g. "whisper" or "voxtral"
-        "description": "short description of the model",  # e.g., "Fast Whisper model, good accuracy"
-    },
-    "whisper-tiny": {
-        "id": "openai/whisper-tiny",
-        "type": "whisper",
-        "description": "Fastest Whisper model, least accurate (~39 MB)",
-    },
-}
+# Save as JSON / Parquet / DuckDB instead of CSV
+uv run python src/transcribe_audio.py --format json
 
+# Label speakers (gated model, see Step 5)
+uv run python src/transcribe_audio.py --diarize --num-speakers 2
+
+# Cohere model (gated; always pass a language)
+uv run python src/transcribe_audio.py --model cohere --language en
+
+# Redo files that were already transcribed
+uv run python src/transcribe_audio.py --all-audio
 ```
 
-#### Whisper Models (OpenAI)
+### How files are processed
 
-Choose from different Whisper models based on your speed vs accuracy needs:
+- Every `.mp3`, `.wav`, `.flac`, `.m4a`, and `.ogg` file directly inside
+  `--input-path` is transcribed, in alphabetical order. Subfolders are not
+  searched.
+- Results are **appended** to `<output-path>/transcribed_audio.<format>`.
+  `--output-path` is a **folder**, not a file name.
+- Files already in the output file are **skipped** (matched by file name and
+  size), so you can re-run the same command as new recordings arrive. Use
+  `--all-audio` to redo everything.
+- Recordings of any length are transcribed in full.
 
-  | Model                    | Description                         | Size     | Use Case                   |
-  | ------------------------ | ----------------------------------- | -------- | -------------------------- |
-  | `whisper-tiny`           | Fastest model, least accurate       | ~39 MB   | Quick testing, real-time   |
-  | `whisper-small`          | Fast model, good accuracy           | ~244 MB  | **Recommended default**    |
-  | `whisper-medium`         | Balanced speed/accuracy             | ~769 MB  | High-quality transcription |
-  | `whisper-large-v3`       | Most accurate, slowest              | ~3090 MB | Maximum quality needed     |
-  | `whisper-large-v3-turbo` | Near large-v3 accuracy, much faster | ~1550 MB | High quality with speed    |
+### All options
 
-**Whisper Language Support**: Supports 99 languages including English, Spanish,
-French, German, Chinese, Japanese, Korean, Arabic, Hindi, and many more. Use ISO
-639-1 language codes (e.g., `en`, `es`, `fr`, `de`, `zh`, `ja`, `ko`, `ar`,
-`hi`).
+  | Option                    | Default                  | What it does                                                                                                        |
+  | ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+  | `--input-path PATH`       | `./audio`                | Folder with the audio files                                                                                         |
+  | `--output-path PATH`      | `./output`               | Folder for `transcribed_audio.<format>`                                                                             |
+  | `--format FORMAT`         | `csv`                    | `csv`, `json`, `parquet`, or `duckdb` (see [Output formats](#output-formats))                                       |
+  | `--model MODEL`           | `whisper-small`          | Model to use (see [Models](#models))                                                                                |
+  | `--language CODE`         | `en`                     | Language code such as `en`, `es`, `fr`. `auto` lets Whisper detect it. Voxtral and Cohere need an explicit language |
+  | `--max-new-tokens N`      | `400`                    | Maximum length of the output. Whisper's limit is 448 per 30-second segment. Ignored by Cohere                       |
+  | `--chunked`               | off                      | Whisper only: faster on long recordings, may lose a few words at chunk edges                                        |
+  | `--all-audio`             | off                      | Re-transcribe files that are already in the output file                                                             |
+  | `--diarize`               | off                      | Label speakers (see [Speaker diarization](#speaker-diarization))                                                    |
+  | `--num-speakers N`        | auto                     | Exact number of speakers, if known (improves diarization)                                                           |
+  | `--refine`                | off                      | Fix the wording of a diarized transcript with a local LLM (needs `--diarize` and Ollama)                            |
+  | `--ollama-model MODEL`    | `qwen3.5:4b`             | Ollama model for `--refine`                                                                                         |
+  | `--ollama-url URL`        | `http://localhost:11434` | Ollama server address                                                                                               |
+  | `--hf-token TOKEN`        | none                     | Hugging Face token for gated models (otherwise uses `HF_TOKEN` or `hf auth login`)                                  |
+  | `--diarization-path PATH` | none                     | Local copy of the diarization model, for fully offline use                                                          |
 
-#### Voxtral Models (Mistral AI) - Optional
+### What the output looks like
 
-For multilingual speech recognition with advanced capabilities:
+Each row is one audio file:
 
-  | Model           | Description                   | Size        | Use Case                        |
-  | --------------- | ----------------------------- | ----------- | ------------------------------- |
-  | `voxtral-mini`  | Multilingual ASR model        | ~3B params  | Fast multilingual transcription |
-  | `voxtral-small` | High-quality multilingual ASR | ~24B params | Best multilingual accuracy      |
+```csv
+file_id,filename,file_size_bytes,transcription_time_seconds,transcription_text,model_id,started_at,processed_at
+a1b2c3d4e5f6g7h8,sample.mp3,1048576,2.34,"Hello world, this is a test recording.",openai/whisper-small,2024-01-01T12:00:00Z,2024-01-01T12:00:02Z
+```
 
-**Voxtral Language Support**: Currently supports 8 languages: English (`en`),
-Spanish (`es`), French (`fr`), Portuguese (`pt`), Hindi (`hi`), German (`de`),
-Dutch (`nl`), and Italian (`it`).
+  | Column                       | Meaning                                                      |
+  | ---------------------------- | ------------------------------------------------------------ |
+  | `file_id`                    | ID built from the file name and size (used to skip repeats)  |
+  | `filename`                   | Audio file name                                              |
+  | `file_size_bytes`            | File size                                                    |
+  | `transcription_time_seconds` | How long the transcription took                              |
+  | `transcription_text`         | The transcript (with speaker labels if `--diarize` was used) |
+  | `model_id`                   | Model(s) used                                                |
+  | `started_at`, `processed_at` | When processing started and finished                         |
 
-> **Note**: Voxtral dependencies are included in the standard environment. See
-> [Voxtral Model Setup](#voxtral-model-setup) below to verify availability.
+To keep a log of a long run:
+`uv run python src/transcribe_audio.py 2>&1 | tee transcription.log`
 
-#### Cohere Transcribe Model (Cohere Labs)
+## Reference
 
-  | Model    | Description                                       | Size       | Use Case                                    |
-  | -------- | ------------------------------------------------- | ---------- | ------------------------------------------- |
-  | `cohere` | Multilingual STT with built-in long-form chunking | ~2B params | Long recordings, multilingual transcription |
+### Models
 
-**Cohere Language Support**: 14 languages: English (`en`), German (`de`), French
-(`fr`), Italian (`it`), Spanish (`es`), Portuguese (`pt`), Greek (`el`), Dutch
-(`nl`), Polish (`pl`), Arabic (`ar`), Vietnamese (`vi`), Chinese (`zh`),
-Japanese (`ja`), and Korean (`ko`). No auto-detect --- an explicit language is
-required.
+  | Model                    | Family  | Size         | Languages | Best for                               |
+  | ------------------------ | ------- | ------------ | --------- | -------------------------------------- |
+  | `whisper-tiny`           | Whisper | \~39 MB      | 99        | Quick tests                            |
+  | `whisper-small`          | Whisper | \~244 MB     | 99        | **Recommended default**                |
+  | `whisper-medium`         | Whisper | \~769 MB     | 99        | Higher quality                         |
+  | `whisper-large-v3`       | Whisper | \~3 GB       | 99        | Maximum quality, slowest               |
+  | `whisper-large-v3-turbo` | Whisper | \~1.5 GB     | 99        | Near large-v3 quality, much faster     |
+  | `voxtral-mini`           | Voxtral | \~3B params  | 8         | Multilingual transcription             |
+  | `voxtral-small`          | Voxtral | \~24B params | 8         | Best multilingual accuracy (>8 GB GPU) |
+  | `cohere`                 | Cohere  | \~2B params  | 14        | Long recordings, multilingual (gated)  |
+
+**Languages** (use these codes with `--language`):
+
+- **Whisper**: 99 languages, ISO 639-1 codes (`en`, `es`, `fr`, `de`, `zh`,
+  `ja`, `ko`, `ar`, `hi`, ...), or `auto` to detect.
+- **Voxtral**: `en`, `es`, `fr`, `pt`, `hi`, `de`, `nl`, `it`.
+- **Cohere**: `en`, `de`, `fr`, `it`, `es`, `pt`, `el`, `nl`, `pl`, `ar`, `vi`,
+  `zh`, `ja`, `ko`. No auto-detect.
 
 Notes:
 
-- `CohereLabs/cohere-transcribe-03-2026` is a **gated model** --- see [Hugging
-  Face Access for Gated Models](#hugging-face-access-for-gated-models) for the
-  one-time setup.
-- Long recordings are chunked and reassembled automatically by the model ---
-  `--max-new-tokens` and `--chunked` are ignored.
+- **Whisper** recordings over 30 seconds are transcribed in full: sequentially
+  by default (most accurate) or in parallel chunks with `--chunked` (faster).
+- **Voxtral** works out of the box after `uv sync`. Check with
+  `uv run python -c "from transformers import VoxtralForConditionalGeneration; print('Voxtral OK')"`.
+  It needs more GPU memory than Whisper.
+- **Cohere** chunks long recordings itself, so `--max-new-tokens` and
+  `--chunked` are ignored. It is gated (see below).
 
-### Hugging Face Access for Gated Models
+**Adding a model:** models are listed in the `AVAILABLE_MODELS` dictionary in
+`src/transcribe_audio.py`. Add an entry with the Hugging Face model ID, its
+`type` (`whisper`, `voxtral`, or `cohere`), and a short description:
 
-The Cohere model and the pyannote diarization model are **gated** on the Hugging
-Face Hub (the Whisper and Voxtral models are not). A one-time setup is required
-for the first download; the models are cached locally afterwards and all
-transcription runs fully offline on your machine.
-
-**1. Accept the model terms in your browser** (while logged in to your HF
-account):
-
-- Cohere: <https://hf.co/CohereLabs/cohere-transcribe-03-2026>
-- pyannote: <https://hf.co/pyannote/speaker-diarization-community-1>
-
-**2. Create an access token** at <https://hf.co/settings/tokens>:
-
-- Simplest: a **classic token with the "Read" role**.
-- If you use a **fine-grained token**, you must enable **"Read access to
-  contents of all public gated repos you can access"** under repository
-  permissions --- without it, downloads fail with
-  `403 Forbidden: Please   enable access to public gated repositories in your fine-grained token   settings`.
-
-**3. Authenticate locally** (either method):
-
-```bash
-# Option A: log in once; the token is cached for all future runs
-uv run hf auth login
-
-# Option B: set the environment variable for the current session
-$env:HF_TOKEN = "hf_..."   # PowerShell
-export HF_TOKEN="hf_..."   # bash/zsh
+```python
+"whisper-tiny": {
+    "id": "openai/whisper-tiny",
+    "type": "whisper",
+    "description": "Fastest Whisper model, least accurate (~39 MB)",
+},
 ```
 
-Check your login status with `uv run hf auth whoami`.
+### Hugging Face access for gated models
 
-**Troubleshooting first downloads:**
+The Cohere, pyannote (diarization), and Phonon (demo audio) models are **gated**
+on the Hugging Face Hub. Setup is once per machine; afterwards the models are
+cached and run offline.
 
-  | Error                                       | Cause                            | Fix                                                        |
-  | ------------------------------------------- | -------------------------------- | ---------------------------------------------------------- |
-  | `401 ... Please log in`                     | Not authenticated                | Step 3 above                                               |
-  | `403 ... fine-grained token settings`       | Token lacks gated-repo access    | Step 2 above (edit token permissions or use a classic one) |
-  | `Cannot access gated repo` after logging in | Terms not accepted for the model | Step 1 above (accept on the model page, per model)         |
+1. **Accept the terms** on each model page while logged in:
+   - Cohere: <https://hf.co/CohereLabs/cohere-transcribe-03-2026>
+   - pyannote: <https://hf.co/pyannote/speaker-diarization-community-1>
+   - Phonon: <https://hf.co/gradium/phonon-40m-multilingual>
 
-### Speaker Diarization
+2. **Create a token** at <https://hf.co/settings/tokens>:
+   - Simplest: a **classic token with the "Read" role**.
+   - A **fine-grained token** must have **"Read access to contents of all public
+     gated repos you can access"** enabled, or downloads fail with
+     `403 Forbidden: Please enable access to public gated repositories in your fine-grained token settings`.
 
-Add `--diarize` (CLI) or switch on **Multiple speakers (diarization)** in the
-web app to label who said what. Diarization finds speaker turns with
-[pyannote](https://hf.co/pyannote/speaker-diarization-community-1), then pairs
-them with the transcription, producing transcripts like:
+3. **Authenticate** (either way):
+
+   ```bash
+   # Option A: log in once; the token is saved for future runs
+   uv run hf auth login
+
+   # Option B: set the token for the current terminal session only
+   $env:HF_TOKEN = "hf_..."   # PowerShell
+   export HF_TOKEN="hf_..."   # bash/zsh
+   ```
+
+Check your login with `uv run hf auth whoami`.
+
+  | Error                                       | Cause                            | Fix                                          |
+  | ------------------------------------------- | -------------------------------- | -------------------------------------------- |
+  | `401 ... Please log in`                     | Not authenticated                | Step 3                                       |
+  | `403 ... fine-grained token settings`       | Token lacks gated-repo access    | Step 2 (edit the token or use a classic one) |
+  | `Cannot access gated repo` after logging in | Terms not accepted for the model | Step 1 (accept on each model's page)         |
+
+### Speaker diarization
+
+Add `--diarize` (CLI) or switch on **Multiple speakers (diarization)** (web app)
+to label who said what.
+[pyannote](https://hf.co/pyannote/speaker-diarization-community-1) finds the
+speaker turns, which are paired with the transcription:
 
 ```text
 SPEAKER_01: Thank you for joining. Let's begin with introductions.; SPEAKER_00: My name is ...; SPEAKER_01: Great, first question: ...
 ```
 
-Consecutive turns by the same speaker are concatenated into a single turn, so
-the transcript alternates speaker by speaker (any number of speakers). Turns are
-separated by `"; "` and the whole transcript is one line --- the CSV/JSON
-writers quote and escape it automatically.
+- Turns are separated by `"; "` and the whole transcript stays on one line, so
+  the output columns don't change. Consecutive turns by the same speaker are
+  merged.
+- If you know the number of speakers, pass `--num-speakers N` (or set it in the
+  app) for better accuracy.
+- Files already transcribed without diarization are skipped. Add `--all-audio`
+  to redo them with speaker labels.
 
-**How the transcription is paired with the speaker turns:**
+**Which model to use with diarization:**
 
-- **Whisper models**: the full recording is transcribed once with segment
-  timestamps, and each segment is assigned a speaker by overlapping it with the
-  pyannote turns. The transcript wording is therefore identical to a plain
-  (non-diarized) Whisper run --- diarization no longer costs any text quality.
-- **Cohere and Voxtral models**: these models don't emit timestamps, so each
-  speaker turn is sliced out of the audio and transcribed separately. Short,
-  out-of-context slices reduce text quality --- use `--refine` (below) to fix
-  the wording with a local LLM.
+- **Whisper**: the recording is transcribed once with timestamps, and each piece
+  is matched to a speaker. Wording is as good as a plain run.
+- **Cohere and Voxtral**: these models have no timestamps, so each speaker turn
+  is cut out and transcribed separately. Short pieces lose context, so wording
+  is worse. `--refine` fixes this.
 
-**Optional: `--refine` --- fix diarized wording with a local LLM (Ollama)**
+#### Optional: `--refine`: fix diarized wording with a local LLM (Ollama)
 
-`--refine` additionally transcribes the full recording at normal quality, then
-asks a local LLM served by [Ollama](https://ollama.com) to rewrite the
-speaker-labeled transcript so its wording matches the full-quality transcript.
-Everything runs locally --- no transcript content leaves the machine.
+`--refine` also transcribes the full recording normally, then asks a local LLM
+served by [Ollama](https://ollama.com) to correct the speaker-labeled transcript
+so its wording matches. Everything runs on your machine.
 
 One-time setup:
 
 ```bash
-# 1. Install Ollama from https://ollama.com (or: winget install Ollama.Ollama)
-# 2. Pull the default model (any instruct model works; pick your favorite)
+# 1. Install Ollama from https://ollama.com (Windows: winget install Ollama.Ollama)
+# 2. Download the default model (any instruct model works)
 ollama pull qwen3.5:4b
 # 3. Make sure the server is running (the desktop app, or: ollama serve)
 ```
@@ -270,710 +448,125 @@ Usage:
 
 ```bash
 uv run python src/transcribe_audio.py --model cohere --language en --diarize --refine
-uv run python src/transcribe_audio.py --diarize --refine --ollama-model llama3.2:3b  # different model
+uv run python src/transcribe_audio.py --diarize --refine --ollama-model llama3.2:3b
 ```
 
-Notes on `--refine`:
+- If Ollama is unreachable or misbehaves, a warning is printed and the unrefined
+  transcript is saved. A run never fails because of refinement. `model_id`
+  includes `+ ollama:<model>` only when refinement succeeded.
+- Very long recordings are refined in chunks split at speaker turns; wording
+  near chunk edges can be slightly off.
+- Most useful with Cohere/Voxtral. With Whisper it usually changes little.
 
-- If Ollama is unreachable or the model misbehaves, a warning is printed and the
-  **unrefined** diarized transcript is saved --- a run never fails because of
-  refinement. `model_id` records `+ ollama:<model>` only when refinement
-  actually succeeded.
-- Very long recordings are refined in chunks split at speaker-turn boundaries;
-  the pairing of plain text to chunks is proportional and can be slightly
-  imprecise near chunk edges.
-- Most useful with Cohere/Voxtral. With Whisper the diarized wording already
-  matches the plain transcript, so refinement usually changes little.
+#### Fully offline diarization
 
-**One-time setup** --- the pyannote model is gated: follow [Hugging Face Access
-for Gated Models](#hugging-face-access-for-gated-models) (accept the terms on
-the pyannote model page). The CLI also accepts the token directly via
-`--hf-token`.
-
-**Fully offline use** --- download the model once, then no token or internet is
-needed:
+Download the model once, then no token or internet is needed:
 
 ```bash
-# One-time download (requires git-lfs and an HF token)
+# One-time download (requires git-lfs and Hugging Face access)
 git clone https://hf.co/pyannote/speaker-diarization-community-1 ~/models/pyannote-speaker-diarization-community-1
 
-# Diarize offline from the local copy
+# Use the local copy
 uv run python src/transcribe_audio.py --diarize --diarization-path ~/models/pyannote-speaker-diarization-community-1
 ```
 
-In the web app, enter the same directory under **Local model directory (offline
+In the web app, enter the same folder under **Local model directory (offline
 use)**.
 
-Tips:
+### Output formats
 
-- If you know the number of speakers, pass `--num-speakers N` (or set it in the
-  app) for better accuracy.
-- Diarized runs keep the same output schema: speaker labels are embedded in
-  `transcription_text` (`"; "`-separated speaker turns) and `model_id` records
-  both the transcription and diarization models.
-- Files already transcribed without diarization are skipped by ID --- add
-  `--all-audio` to re-run them with speaker labels.
+  | Format    | File                        | Best for                             |
+  | --------- | --------------------------- | ------------------------------------ |
+  | `csv`     | `transcribed_audio.csv`     | Excel, quick inspection              |
+  | `json`    | `transcribed_audio.json`    | Web apps, APIs                       |
+  | `parquet` | `transcribed_audio.parquet` | pandas / polars analysis             |
+  | `duckdb`  | `transcribed_audio.duckdb`  | SQL queries (table `transcriptions`) |
 
-### Generate Demo Audio from a Transcript
+Example DuckDB query:
 
-`src/generate_audio.py` turns a written, fictitious transcript into an MP3 with
-computer voices, so you can demo or test transcription without real recordings.
-It uses [Phonon](https://huggingface.co/gradium/phonon-40m-multilingual) on the
-CPU, in English, Spanish (Mexican voices), or French.
+```bash
+echo "SELECT model_id, AVG(transcription_time_seconds) FROM transcriptions GROUP BY model_id;" | duckdb output/transcribed_audio.duckdb
+```
+
+To delete all CLI results in `output/`, run `just clean-outputs`.
+
+### Performance and GPU
+
+- On Windows and Linux the project installs CUDA 12.8 PyTorch, which uses an
+  NVIDIA GPU when present and the CPU otherwise. macOS uses the CPU.
+- On GPU, models run in float16; on CPU, in float32.
+- Rough speeds: CPU takes 5 to 10 times the audio length; GPU is 20 to 50 times
+  faster than that. Bigger models are slower.
+
+## Development
+
+### Commands
+
+```bash
+just venv             # Install packages + pre-commit hooks
+just app              # Launch the web app
+just lab              # Launch Jupyter Lab
+just test             # Run the fast unit tests (mocked, no model downloads)
+just test-integration # Run tests on real audio (downloads models)
+just test-cov         # Tests with a coverage report
+just lint-py          # Lint Python with ruff
+just fmt-all          # Lint and format Python, SQL, and Markdown
+just pre-commit-run   # Run the pre-commit hooks
+just update-reqs      # Upgrade dependencies and hook versions
+```
+
+Run `just --list` to see every command.
+
+### Tests
 
 ```text
-Interviewer: How long have you been in the savings group?
-Respondent: About a year. My neighbor invited me.
-```
-
-Each line starting with a speaker label starts a turn; other lines continue it.
-Text with no labels is read by one voice. Each speaker gets its own voice,
-alternating female and male.
-
-```bash
-# One MP3 per transcript, written to audio/demo/ by default
-just generate-audio script.md --language es
-
-# Choose the folder and the voices (names from hf.co/gradium/phonon-voices)
-uv run python src/generate_audio.py a.txt b.txt --language fr \
-  --output-path tmp/audio --voices "Enquêtrice=Coralie" "Répondant=Lucien"
-```
-
-Phonon is a gated model: accept its terms on Hugging Face and log in once (see
-above). The weights and voices are licensed CC BY-NC 4.0, non-commercial use
-only. Use it for fictitious scripts, never to imitate a real person.
-
-### Output Formats
-
-Save your transcriptions in multiple formats:
-
-  | Format    | Extension  | Description                | Best For                      |
-  | --------- | ---------- | -------------------------- | ----------------------------- |
-  | `csv`     | `.csv`     | Comma-separated values     | Excel, data analysis          |
-  | `json`    | `.json`    | JavaScript Object Notation | Web applications, APIs        |
-  | `parquet` | `.parquet` | Apache Parquet columnar    | Big data, analytics           |
-  | `duckdb`  | `.duckdb`  | DuckDB database            | SQL queries, complex analysis |
-
-### Usage Examples
-
-**Basic transcription:**
-
-```bash
-# Transcribe all audio files with default settings
-uv run python src/transcribe_audio.py
-```
-
-**Choose model and format:**
-
-```bash
-# Use tiny Whisper model for fast processing, save as JSON
-uv run python src/transcribe_audio.py --model whisper-tiny --format json
-
-# Use large Whisper model for best quality, save to database
-uv run python src/transcribe_audio.py --model whisper-large-v3-turbo --format duckdb
-
-# Use Voxtral model for multilingual transcription (requires setup)
-uv run python src/transcribe_audio.py --model voxtral-mini --format json
-```
-
-**Language-specific transcription:**
-
-```bash
-# Transcribe Spanish audio
-uv run python src/transcribe_audio.py --language es
-
-# Transcribe French audio with more tokens for detailed output
-uv run python src/transcribe_audio.py --language fr --max-new-tokens 600
-
-# Use Voxtral for German transcription
-uv run python src/transcribe_audio.py --model voxtral-mini --language de
-
-# Transcribe Hindi audio with Whisper (Voxtral also supports Hindi)
-uv run python src/transcribe_audio.py --language hi --model whisper-medium
-```
-
-**Token length control:**
-
-```bash
-# Short summaries (fewer tokens)
-uv run python src/transcribe_audio.py --max-new-tokens 200
-
-# Default length
-uv run python src/transcribe_audio.py  # Uses 400 tokens
-
-# Longer transcriptions (Whisper max is 448)
-uv run python src/transcribe_audio.py --max-new-tokens 448
-
-# Voxtral models can use more tokens
-uv run python src/transcribe_audio.py --max-new-tokens 800 --model voxtral-mini
-```
-
-**Re-process all files:**
-
-```bash
-# Force re-transcription of all files (ignores existing results)
-uv run python src/transcribe_audio.py --all-audio --format parquet
-```
-
-**Production batch processing:**
-
-```bash
-# Process large batches with balanced Whisper model
-uv run python src/transcribe_audio.py --model whisper-medium --format duckdb
-
-# Process multilingual content with Voxtral
-uv run python src/transcribe_audio.py --model voxtral-small --format parquet --all-audio
-
-# Batch process Spanish content with custom token limit
-uv run python src/transcribe_audio.py --model whisper-medium --language es --max-new-tokens 500 --format duckdb
-
-# High-quality multilingual processing
-uv run python src/transcribe_audio.py --model voxtral-small --language fr --max-new-tokens 600 --format parquet
-
-# Process files from custom directories
-uv run python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
-
-# Batch process with custom paths and settings
-uv run python src/transcribe_audio.py --input-path ~/recordings --output-path ~/transcriptions --model whisper-medium --format duckdb
-```
-
-### Input Requirements
-
-**Supported Audio Formats:**
-
-- MP3 (`.mp3`)
-- WAV (`.wav`)
-- FLAC (`.flac`)
-- M4A (`.m4a`)
-- OGG (`.ogg`)
-
-**File Organization:**
-
-- Place audio files in the `audio/` directory (or specify custom path with
-  `--input-path`)
-- The script automatically discovers all supported audio files
-- Files are processed in alphabetical order
-- Results are saved to the `output/` directory (or specify custom path with
-  `--output-path`)
-
-### Output Structure
-
-All transcription results include:
-
-- **File ID**: Unique identifier based on filename and size
-- **Filename**: Original audio file name
-- **File Size**: Size in bytes
-- **Transcription Time**: Processing duration in seconds
-- **Transcription Text**: The actual transcribed text
-- **Model ID**: Which Whisper model was used
-- **Timestamps**: When processing started and completed
-
-**Example CSV Output:**
-
-```csv
-file_id,filename,file_size_bytes,transcription_time_seconds,transcription_text,model_id,started_at,processed_at
-a1b2c3d4e5f6g7h8,sample.mp3,1048576,2.34,"Hello world, this is a test recording.",openai/whisper-small,2024-01-01T12:00:00Z,2024-01-01T12:00:02Z
-```
-
-### Performance and GPU Support
-
-**GPU-enabled PyTorch:**
-
-On Windows and Linux, the project installs CUDA-enabled PyTorch wheels (CUDA
-12.8) from the official PyTorch index, so an NVIDIA GPU is used automatically
-when present. On machines without an NVIDIA GPU the same wheels fall back to
-CPU. macOS uses the standard PyPI wheels.
-
-To check whether the GPU is visible to PyTorch:
-
-```bash
-uv run python -c "import torch; print(torch.cuda.is_available())"
-```
-
-**Automatic Device Detection:**
-
-- Uses CUDA GPU if available for faster processing
-- Falls back to CPU automatically
-- Model precision adjusted based on device (float16 for GPU, float32 for CPU)
-- In the web app, the sidebar's **Compute device** selector lets you choose
-  Auto, CPU, or GPU (the GPU option appears only when a CUDA GPU is detected;
-  pick CPU if a larger model runs out of GPU memory)
-
-**Processing Speed Examples:**
-
-- **CPU**: \~5-10x real-time (10 second audio = 50-100 seconds processing)
-- **GPU**: \~20-50x real-time (10 second audio = 5-20 seconds processing)
-- Actual speed varies by model size and hardware
-
-### Incremental Processing
-
-The script avoids re-processing files by:
-
-1. **Generating unique file IDs** based on filename + file size
-2. **Checking existing results** in the output file
-3. **Skipping previously processed files** (unless `--all-audio` is used)
-4. **Appending new results** to existing output files
-
-This makes it efficient for processing large directories incrementally.
-
-### Error Handling
-
-The script handles various error conditions gracefully:
-
-- **Missing audio directory**: Creates directory if needed
-- **Unsupported file formats**: Skips with warning
-- **Corrupted audio files**: Continues processing other files
-- **Model loading errors**: Provides clear error messages
-- **Disk space issues**: Fails gracefully with error details
-
-### Integration Examples
-
-**Using with other tools:**
-
-```bash
-# Process audio and analyze results with DuckDB
-uv run python src/transcribe_audio.py --format duckdb
-echo "SELECT model_id, AVG(transcription_time_seconds) FROM transcriptions GROUP BY model_id;" | duckdb output/transcribed_audio.duckdb
-
-# Export to CSV for Excel analysis
-uv run python src/transcribe_audio.py --format csv
-# Open output/transcribed_audio.csv in Excel
-
-# Process and convert to different format
-uv run python src/transcribe_audio.py --format parquet
-# Use pandas/polars to read parquet file in data science workflows
-```
-
-**Monitoring progress:**
-
-```bash
-# Watch processing in real-time
-uv run python src/transcribe_audio.py --model whisper-small --format json 2>&1 | tee transcription.log
-```
-
-## Voxtral Model Setup
-
-Voxtral models work out of the box: stable HuggingFace transformers (>=4.54) and
-`mistral-common[audio]` are both pinned in `uv.lock`, so a regular `uv sync`
-installs everything Voxtral needs. No extra installation steps are required.
-
-To verify that Voxtral models are available:
-
-```bash
-uv run python -c "from transformers import VoxtralForConditionalGeneration; print('Voxtral OK')"
-```
-
-You should also see both Whisper and Voxtral models listed in
-`uv run python src/transcribe_audio.py --help` and in the web app's model
-dropdown.
-
-### Voxtral vs Whisper Comparison
-
-  | Feature           | Whisper                | Voxtral                                      |
-  | ----------------- | ---------------------- | -------------------------------------------- |
-  | **Languages**     | 99+ languages          | 8 languages (en, es, fr, pt, hi, de, nl, it) |
-  | **Model Size**    | 39MB - 1.5GB           | 3B - 24B parameters                          |
-  | **Speed**         | Fast to moderate       | Moderate to slow                             |
-  | **Accuracy**      | High for English       | Very high for supported languages            |
-  | **Dependencies**  | Standard transformers  | Standard transformers + mistral-common       |
-  | **Use Case**      | General transcription  | Advanced multilingual ASR                    |
-  | **Token Control** | Yes (--max-new-tokens) | Yes (--max-new-tokens)                       |
-
-### Troubleshooting Voxtral
-
-**If Voxtral models don't appear:**
-
-- Run `uv sync` to make sure the environment matches `uv.lock`
-- Check that `mistral-common[audio]` is properly installed:
-  `uv run python -c "import mistral_common"`
-- Verify the transformers version is at least 4.54:
-  `uv run python -c "import transformers; print(transformers.__version__)"`
-
-**Performance considerations:**
-
-- Voxtral models require more GPU memory than Whisper
-- Use `voxtral-mini` for faster processing
-- Use `voxtral-small` only with sufficient GPU memory (>8GB recommended)
-
-## Development set up
-
-### Prerequisites
-
-This project requires Python 3.11 or 3.12 (not 3.13 due to dependency
-constraints) and the following tools:
-
-- **Python 3.11-3.12**: Required for compatibility with audio processing
-  dependencies
-- **uv**: Modern Python package manager for dependency management
-- **just**: Command runner for common development tasks
-- **cmake**: Required for building audio processing dependencies
-- **git**: Version control
-
-### Installation
-
-#### 1. Install System Dependencies
-
-**On macOS/Linux with Homebrew:**
-
-```bash
-brew install just uv cmake
-```
-
-**On Windows:**
-
-```bash
-winget install Casey.Just astral-sh.uv
-# Install cmake via Visual Studio Build Tools or from cmake.org
-```
-
-**On Linux (Ubuntu/Debian):**
-
-```bash
-# Install via Homebrew
-brew install just uv
-# Install other tools via apt
-sudo apt install cmake build-essential pkg-config
-```
-
-#### 2. Clone and Setup Project
-
-```bash
-git clone <repository-url>
-cd audio-transcription
-```
-
-#### 3. Environment Setup
-
-**Quick setup (recommended):**
-
-```bash
-just get-started
-```
-
-**Manual setup:**
-
-```bash
-# Create virtual environment with correct Python version
-uv venv --python 3.12
-uv sync
-```
-
-#### 4. Activate Environment
-
-The project uses `uv` for environment management:
-
-```bash
-# Activate the environment
-uv shell
-
-# Or run commands directly with uv
-uv run python your_script.py
-uv run jupyter lab
-```
-
-### Development Workflow
-
-Common development commands using `just`:
-
-```bash
-just lab              # Launch Jupyter Lab
-just lint-py          # Lint Python code
-just fmt-python       # Format Python code
-just fmt-all          # Format all code (Python, SQL, Markdown)
-just pre-commit-run   # Run pre-commit hooks
-just test             # Run core test suite
-just test-cov         # Run tests with coverage report
-```
-
-## Testing
-
-This project includes a comprehensive test suite with 74 passing tests that
-validate all aspects of the audio transcription functionality.
-
-### Test Structure
-
-```markdown
 tests/
-├── assets/                    # Test audio files for integration tests
-│   └── audio/                 # Real audio files (add your own)
-├── integration/               # Integration tests with real files
-│   └── test_real_audio.py     # Tests using actual audio files
-├── unit/                      # Fast unit tests (mocked)
-│   ├── test_file_operations.py    # ✅ File ID, audio discovery, sizes
-│   ├── test_data_formats.py       # ✅ CSV, JSON, Parquet, DuckDB ops
-│   ├── test_model_loading.py      # ✅ Whisper model loading & validation
-│   ├── test_transcription.py      # ✅ Core transcription with mocks
-│   ├── test_cli.py                # ✅ CLI argument parsing
-│   └── test_error_handling.py     # ⚠️  Error handling (3 edge cases)
-└── conftest.py                # Shared fixtures and test utilities
+├── assets/audio/      # Small real audio files for integration tests
+├── integration/       # Tests with real audio and real models (slow)
+├── unit/              # Fast tests with mocked models
+└── conftest.py        # Shared fixtures
 ```
 
-### Running Tests
-
-**Quick Testing (Recommended):**
-
-```bash
-# Run core working tests (fast, ~6 seconds)
-just test
-# Or: uv run python -m pytest
-```
-
-**Comprehensive Testing:**
-
-```bash
-# Run all working unit tests
-just test-unit
-
-# Run integration tests with real audio files
-just test-integration
-
-# Run slow/comprehensive tests
-just test-slow
-
-# Run ALL tests (including broken ones for debugging)
-just test-all
-
-# Run only broken tests for debugging
-just test-broken
-```
-
-**Coverage Reports:**
-
-```bash
-# Terminal coverage report
-just test-cov
-
-# HTML coverage report (opens in browser)
-just test-cov-html
-
-# XML coverage report (for CI)
-just test-cov-xml
-```
-
-### Test Categories
-
-**✅ Working Tests (74 tests):**
-
-- **File Operations** (12 tests): File ID generation, audio discovery, file
-  sizes
-- **Data Formats** (22 tests): Save/load operations for CSV, JSON, Parquet,
-  DuckDB
-- **Model Loading** (13 tests): Whisper model validation, device handling
-- **Transcription Core** (11 tests): Audio processing with mocked models
-- **CLI Interface** (16 tests): Command-line argument parsing and workflow
-  integration
-
-**⚠️ Broken Tests (3 tests):**
-
-- **Error Handling**: 3 filesystem permission/error detection edge cases
-
-### Adding Real Audio Files for Integration Testing
-
-1. **Place audio files** in `tests/assets/audio/`
-
-2. **Keep files small** (< 1MB each, 1-30 seconds duration)
-
-3. **Document sources** in `tests/assets/README.md`
-
-4. **Run integration tests:**
-
-   ```bash
-   just test-integration
-   ```
-
-Integration tests will skip gracefully if no audio files are present.
-
-### Test Design Principles
-
-- **Fast by default**: Core tests run in \~6 seconds using mocks
-- **No model downloads**: Uses mocked ML models to avoid heavy downloads
-- **Graceful skipping**: Integration tests skip when real audio files
-  unavailable
-- **Comprehensive coverage**: Tests all output formats and error scenarios
-- **CI-ready**: Provides detailed coverage reports for continuous integration
-
-## Code Quality
-
-The project enforces high code quality standards through automated tools:
-
-### Code Formatting and Linting
-
-```bash
-# Format all code (Python, SQL, Markdown)
-just fmt-all
-
-# Format only Python code
-just fmt-python
-
-# Lint Python code with ruff
-just lint-py
-
-# Run all pre-commit hooks
-just pre-commit-run
-```
-
-### Pre-commit Hooks
-
-The project uses comprehensive pre-commit hooks that run automatically before
-each commit:
-
-- **File validation**: YAML, JSON, TOML syntax checking
-- **Python validation**: `validate-pyproject` for pyproject.toml
-- **Spell checking**: `codespell` with custom ignore list
-- **Markdown formatting**: `markdownlint-fix` with auto-fixing
-- **Python formatting**: `ruff-format` for consistent code style
-- **Python linting**: `ruff-check` with comprehensive rule set
-
-**Setup pre-commit hooks:**
-
-```bash
-# Install pre-commit hooks (run once)
-uv run pre-commit install
-
-# Run hooks manually on all files
-just pre-commit-run
-
-# Update hook versions
-just update-reqs
-```
-
-### Code Style Standards
-
-- **Line length**: 88 characters (follows Black standard)
-- **Python target**: 3.12 compatibility
-- **Docstrings**: Required for public functions and classes
-- **Type hints**: Encouraged but not enforced
-- **Import sorting**: Automatic via ruff
-- **Formatting**: Automatic via ruff (replaces Black)
-
-### IDE Setup
-
-**VS Code (recommended):**
-
-- Install Python extension
-- Set Python interpreter to `.venv/bin/python` (or `.venv/Scripts/python.exe` on
-  Windows)
-- Install Jupyter extension for notebook support
-- Install Python Test Explorer for integrated test running
-
-## Demo Notebooks
-
-The project includes demonstration notebooks showcasing different transcription
-models:
-
-### Available Demos
-
-- **`notebooks/demo_whisper_transcription.ipynb`**: Demonstrates audio
-  transcription using OpenAI's Whisper model
-  - Uses the `openai/whisper-small` model for faster inference
-  - Includes interactive audio players for testing
-  - Shows transcription accuracy comparison with original text
-
-- **`notebooks/demo_voxtral_transcription.ipynb`**: Demonstrates audio
-  transcription using Mistral's Voxtral model
-  - Uses the `mistralai/Voxtral-Mini-3B-2507` model
-  - Multilingual speech recognition capabilities
-  - Interactive audio processing with timing metrics
-
-### Running the Demos
-
-```bash
-# Launch Jupyter Lab
-just lab
-
-# Or run directly with uv
-uv run jupyter lab
-```
-
-Both notebooks include sample audio files and demonstrate:
-
-- Model loading and setup
-- Audio file processing with interactive players
-- Transcription accuracy comparison
-- Performance timing metrics
-
-## Contributing
-
-### Development Workflow
-
-1. **Fork and clone** the repository
-
-2. **Set up development environment**:
-
-   ```bash
-   just get-started
-   uv shell
-   ```
-
-3. **Install pre-commit hooks**:
-
-   ```bash
-   uv run pre-commit install
-   ```
-
-4. **Create a feature branch**:
-
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-5. **Make your changes** following the code style standards
-
-6. **Run tests** to ensure everything works:
-
-   ```bash
-   just test
-   just lint-py
-   ```
-
-7. **Commit your changes** (pre-commit hooks will run automatically):
-
-   ```bash
-   git add .
-   git commit -m "Add your descriptive commit message"
-   ```
-
-8. **Push and create a pull request**
-
-### Adding New Features
-
-When adding new functionality:
-
-1. **Write tests first** (TDD approach recommended)
-2. **Update documentation** in README.md and CLAUDE.md
-3. **Ensure code quality** by running `just fmt-all` and `just lint-py`
-4. **Add integration tests** if working with real audio files
-5. **Update notebooks** if the feature affects demo functionality
-
-### Code Review Checklist
-
-- [ ] Tests pass (`just test`)
-- [ ] Code is formatted (`just fmt-all`)
-- [ ] Code is linted (`just lint-py`)
-- [ ] Documentation is updated
-- [ ] Pre-commit hooks pass
-- [ ] Integration tests work (if applicable)
-
-### Troubleshooting
-
-**Python 3.13 Issues:** If you encounter errors with `sentencepiece` or other
-dependencies, ensure you're using Python 3.11 or 3.12:
-
-```bash
-uv python pin 3.12
-uv sync
-```
-
-**Missing cmake:** Audio dependencies require cmake for compilation. Install via
-your system package manager.
-
-**Voxtral Model Issues:** If you encounter issues with the Voxtral model, sync
-the environment to the lockfile (which pins Voxtral-compatible versions of
-`transformers` and `mistral-common[audio]`):
-
-```bash
-uv sync
-
-# Or shortcut
-just venv
-```
+- `just test` is fast and downloads no models.
+- Integration tests skip gracefully when audio files or gated models are
+  unavailable. To add audio, put small files (<1 MB, 1 to 30 seconds) in
+  `tests/assets/audio/` and document their source in `tests/assets/README.md`.
+
+### Code quality
+
+- `ruff` lints and formats Python (line length 88, Python 3.12).
+- Pre-commit hooks validate YAML/JSON/TOML and `pyproject.toml`, check spelling
+  (`codespell`), and lint Markdown and Python. `just venv` installs them; they
+  run on every commit.
+- Write docstrings for public functions.
+
+### Demo notebooks
+
+Run `just lab`, then open:
+
+- `notebooks/demo_whisper_transcription.ipynb`: Whisper (`openai/whisper-small`)
+  with audio players and accuracy comparison.
+- `notebooks/demo_voxtral_transcription.ipynb`: Voxtral
+  (`mistralai/Voxtral-Mini-3B-2507`) with timing metrics.
+
+### Contributing
+
+1. Create a branch: `git checkout -b feature/your-feature-name`
+2. Make your changes, with tests for new behavior.
+3. Run `just test`, `just fmt-all`, and `just pre-commit-run`.
+4. Update `README.md` (users) and `CLAUDE.md` (developer notes) if behavior
+   changes.
+5. Commit, push, and open a pull request.
+
+## Troubleshooting
+
+  | Problem                                          | Fix                                                                                                    |
+  | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+  | `just` or `uv` not found after installing        | Close and reopen the terminal                                                                          |
+  | Errors mentioning Python 3.13 or `sentencepiece` | `uv python pin 3.12` then `uv sync`                                                                    |
+  | `401`, `403`, or `Cannot access gated repo`      | See [Hugging Face access](#hugging-face-access-for-gated-models)                                       |
+  | CLI says no audio files found                    | Files must sit directly in `--input-path` (subfolders are skipped) and be mp3/wav/flac/m4a/ogg         |
+  | Files are skipped                                | They were already transcribed; add `--all-audio` (CLI) or tick **Re-transcribe processed files** (app) |
+  | GPU runs out of memory                           | Use a smaller model, or pick **CPU** under **Compute device** in the app                               |
+  | Voxtral model missing or failing                 | `uv sync` to match the lockfile, then run the Voxtral check in [Models](#models)                       |
+  | `--refine` prints a warning                      | Make sure Ollama is running and the model is pulled (`ollama pull qwen3.5:4b`)                         |

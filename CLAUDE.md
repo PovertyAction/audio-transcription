@@ -142,7 +142,6 @@ Development uses `just` for command automation. Key commands:
 # Environment setup
 just get-started          # Install software and create venv
 just venv                 # Create/sync virtual environment
-just activate-venv        # Activate environment (uv shell)
 
 # Transcription with custom paths
 python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
