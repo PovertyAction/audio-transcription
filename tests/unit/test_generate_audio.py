@@ -3,7 +3,12 @@
 import numpy as np
 import pytest
 
-from src.generate_audio import assign_voices, parse_transcript, to_mp3
+from src.generate_audio import (
+    assign_voices,
+    format_voices,
+    parse_transcript,
+    to_mp3,
+)
 
 
 def test_parse_speakers_and_continuation_lines():
@@ -45,3 +50,17 @@ def test_to_mp3_returns_mp3_bytes():
     tone = 0.3 * np.sin(np.linspace(0, 2000, 24000)).astype(np.float32)
     mp3 = to_mp3(tone, 24000)
     assert len(mp3) > 1000 and (mp3[:3] == b"ID3" or mp3[0] == 0xFF)
+
+
+def test_format_voices_filters_language_and_sorts_by_country():
+    """Only the chosen language is listed, grouped by country then gender."""
+    catalog = [
+        {"name": "Lalo", "language": "es", "locale": "es-mx", "gender": "male"},
+        {"name": "Lucía", "language": "es", "locale": "es-es", "gender": "female"},
+        {"name": "Zoey", "language": "en", "locale": "en-us", "gender": "female"},
+        {"name": "Bot", "language": "es", "locale": "characters"},
+    ]
+    lines = format_voices(catalog, "es").splitlines()
+    assert lines[0].split() == ["NAME", "COUNTRY", "GENDER", "AGE"]
+    assert [line.split()[0] for line in lines[1:]] == ["Bot", "Lucía", "Lalo"]
+    assert lines[1].split()[2] == "-"

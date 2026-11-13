@@ -7,8 +7,9 @@ voice. Lines starting with `#` are skipped.
 
 Speech comes from Phonon (gradium/phonon-40m-multilingual), which runs on a
 laptop CPU. Each speaker gets a different voice, in order of first appearance,
-alternating female and male. Spanish uses Mexican voices; pass --voices to pick
-others from https://huggingface.co/gradium/phonon-voices.
+alternating female and male. Defaults are US English, Mexican Spanish, and
+French from France; run --list-voices to see every voice's country and gender,
+then pick with --voices.
 
 Before the first run, log in to Hugging Face (`hf auth login`) and accept the
 terms at https://huggingface.co/gradium/phonon-40m-multilingual. The model and
@@ -16,6 +17,7 @@ voices are licensed CC BY-NC 4.0: non-commercial use only. Use it for
 fictitious scripts, never to imitate a real person.
 
 Example:
+    uv run python src/generate_audio.py --list-voices --language es
     uv run python src/generate_audio.py script.md --language es
     uv run python src/generate_audio.py a.txt b.txt --output-path tmp/audio \
         --voices "Interviewer=Easton" "Respondent=Zoey"
@@ -32,6 +34,7 @@ import lameenc
 import numpy as np
 
 MODEL = "hf://gradium/phonon-40m-multilingual"
+VOICES_REPO = "gradium/phonon-voices"
 DEFAULT_OUTPUT = Path(__file__).parent.parent / "audio" / "demo"
 
 # Alternating female and male voices from the Phonon catalog.
@@ -76,6 +79,31 @@ def assign_voices(
     return voices
 
 
+def format_voices(catalog: list[dict], language: str) -> str:
+    """Table of a language's voices (name, country, gender, age), by country."""
+    rows = sorted(
+        (v for v in catalog if v["language"] == language),
+        key=lambda v: (v["locale"], v.get("gender") or "", v["name"]),
+    )
+    lines = [f"{'NAME':<12}{'COUNTRY':<12}{'GENDER':<8}AGE"]
+    for v in rows:
+        gender = v.get("gender") or "-"
+        lines.append(f"{v['name']:<12}{v['locale']:<12}{gender:<8}{v.get('age', '')}")
+    return "\n".join(lines)
+
+
+def list_voices(language: str) -> None:
+    """Download the Phonon voice catalog and print the voices for a language."""
+    import json
+
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(VOICES_REPO, "voices.jsonl")
+    with open(path, encoding="utf-8") as f:
+        catalog = [json.loads(line) for line in f if line.strip()]
+    print(format_voices(catalog, language))
+
+
 def to_mp3(audio: np.ndarray, sample_rate: int) -> bytes:
     """Encode a mono float waveform in [-1, 1] as MP3."""
     pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16)
@@ -92,7 +120,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate speech audio from written transcripts."
     )
-    parser.add_argument("transcripts", nargs="+", type=Path, help="Text files")
+    parser.add_argument("transcripts", nargs="*", type=Path, help="Text files")
     parser.add_argument(
         "--language", choices=sorted(DEFAULT_VOICES), default="en", help="Language"
     )
@@ -110,9 +138,19 @@ def main() -> None:
         help=f"Folder for the MP3 files (default: {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
+        "--list-voices",
+        action="store_true",
+        help="Print the voices for --language (country, gender, age) and exit",
+    )
+    parser.add_argument(
         "--pause", type=float, default=0.6, help="Seconds of silence between turns"
     )
     args = parser.parse_args()
+    if args.list_voices:
+        list_voices(args.language)
+        return
+    if not args.transcripts:
+        parser.error("give at least one transcript file (or use --list-voices)")
     overrides = dict(v.split("=", 1) for v in args.voices)
 
     import ptts  # loaded here so --help and tests need no model

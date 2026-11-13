@@ -149,7 +149,8 @@ Interviewer: And how has saving each week gone for you?
 - Each line that starts with a label (`Interviewer:`, `SPEAKER_01:`, ...) starts
   a new turn. Lines without a label continue the previous turn.
 - Each speaker gets their own voice, in order of appearance, alternating female
-  and male.
+  and male. To choose the country, gender, or a specific voice, see [Choose
+  voices](#choose-voices-country-and-gender).
 - A file with no labels is read by a single voice.
 
 A ready-made Spanish example lives in
@@ -168,15 +169,52 @@ after it). Other options:
 # Several transcripts at once, into a different folder
 just generate-audio a.txt b.txt --language fr --output-path my-demo-audio
 
-# Pick voices per speaker (names from https://hf.co/gradium/phonon-voices)
-just generate-audio script.md --voices "Interviewer=Easton" "Respondent=Zoey"
-
 # Longer pause between turns (seconds; default 0.6)
 just generate-audio script.md --pause 1.0
 ```
 
 Without `just`, use `uv run python src/generate_audio.py ...` with the same
 arguments.
+
+### Choose voices (country and gender)
+
+By default each language uses one country's accent: US English (`en`), Mexican
+Spanish (`es`), and French from France (`fr`). Speakers get voices in order of
+appearance, alternating female and male. To use another accent or gender, pick
+the voices yourself in two steps.
+
+**1. List the voices for your language:**
+
+```bash
+just generate-audio --list-voices --language es
+```
+
+```text
+NAME        COUNTRY     GENDER  AGE
+Alba        es-es       female  Young
+Borja       es-es       male    Young Adult
+...
+Regina      es-mx       female  Adult
+Lalo        es-mx       male    Young Adult
+...
+```
+
+`COUNTRY` is the accent: `en-us` (United States), `en-gb` (United Kingdom),
+`es-mx` (Mexico), `es-es` (Spain), and `fr-fr` (France). English also has
+`characters` voices (stylized, no gender listed).
+
+**2. Give each speaker a voice by name** with `--voices SPEAKER=VOICE`, using
+the speaker labels from your transcript:
+
+```bash
+# Spanish from Spain: female interviewer, male respondent
+just generate-audio examples/entrevista_ficticia.md --language es --voices "ENTREVISTADORA=Alba" "ENTREVISTADO=Borja"
+
+# British English, two male speakers
+just generate-audio script.md --voices "Interviewer=Hugh" "Respondent=Alfie"
+```
+
+Speakers you don't name get the default voices.
 
 ### Transcribe it
 

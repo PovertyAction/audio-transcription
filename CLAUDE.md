@@ -24,7 +24,9 @@ The workflow has two entry points:
 A helper, `src/generate_audio.py` (`just generate-audio`), goes the other way:
 it speaks a fictitious written transcript (`SPEAKER: text` lines) with Phonon
 TTS (gated, CC BY-NC 4.0) in English, Spanish, or French and writes MP3s to
-`audio/demo/` (`--output-path` to change), for demos and tests.
+`audio/demo/` (`--output-path` to change), for demos and tests. Voices come from
+the `gradium/phonon-voices` catalog: `--list-voices` prints name, country
+(locale), gender, and age for `--language`; `--voices SPEAKER=VOICE` picks them.
 
 The project demonstrates transcription capabilities using three model families:
 
