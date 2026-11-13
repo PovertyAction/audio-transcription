@@ -3,7 +3,13 @@
 Each line that starts with a speaker label (`Interviewer: ...`,
 `ENTREVISTADO: ...`, `SPEAKER_01: ...`) starts a new turn; lines without a
 label continue the previous turn. A transcript with no labels is read by one
-voice. Lines starting with `#` are skipped.
+voice, and --single-speaker reads everything (labels included) in one voice.
+Lines starting with `#` are skipped. Labels work in any language and script,
+with a space before the colon (French typography) or a full-width colon.
+
+After each MP3 the script says how many speakers it heard, which tells you
+whether to transcribe the MP3 with --diarize, and warns about labels that look
+accidental (for example `Note: ...` inside a monologue).
 
 Speech comes from Phonon (gradium/phonon-40m-multilingual), which runs on a
 laptop CPU. Each speaker gets a different voice, in order of first appearance,
@@ -28,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections import Counter
 from pathlib import Path
 
 import lameenc
@@ -44,22 +51,57 @@ DEFAULT_VOICES = {
     "fr": ["Noémie", "Jules", "Coralie", "Arnaud", "Solène", "Lucien"],
 }
 
-TURN = re.compile(r"^\s*([^\W\d_][\w .'-]{0,39}?):\s+(\S.*)$")
+# A label starts with a letter (any script), then up to 40 letters, digits,
+# spaces (including the no-break spaces French puts before ":"), dots,
+# apostrophes, or hyphens, then ": " or a full-width "：".
+TURN = re.compile(r"^\s*([^\W\d_][\w\s.'’-]{0,39}?)\s*(?::\s+|：\s*)(\S.*)$")
+UNLABELED = "SPEAKER"  # speaker name for text before any label
 
 
-def parse_transcript(text: str) -> list[tuple[str, str]]:
-    """Split a transcript into (speaker, text) turns."""
+def parse_transcript(text: str, single_speaker: bool = False) -> list[tuple[str, str]]:
+    """Split a transcript into (speaker, text) turns.
+
+    With single_speaker, labels are read as plain text and everything is one turn.
+    """
     turns: list[list[str]] = []
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        if match := TURN.match(line):
+        match = None if single_speaker else TURN.match(line)
+        if match:
             turns.append([match[1].strip(), match[2]])
         elif turns:
             turns[-1][1] += " " + line.strip()
         else:
-            turns.append(["SPEAKER", line.strip()])
+            turns.append([UNLABELED, line.strip()])
     return [(speaker, " ".join(words.split())) for speaker, words in turns]
+
+
+def describe_speakers(turns: list[tuple[str, str]]) -> str:
+    """Say how many speakers a transcript has and whether to diarize it.
+
+    Likely accidental labels are flagged from the turn structure alone (no word
+    lists), so the checks work in any language.
+    """
+    counts = Counter(speaker for speaker, _ in turns)
+    if len(counts) <= 1:
+        return "1 speaker: no diarization needed when transcribing."
+    lines = [
+        f"{len(counts)} speakers ({', '.join(counts)}): transcribe with "
+        f"--diarize --num-speakers {len(counts)}."
+    ]
+    if turns[0][0] == UNLABELED:
+        lines.append(
+            "Check: the text starts without a speaker label but has labels "
+            "later. If it is one person, use --single-speaker."
+        )
+    once = [s for s, n in counts.items() if n == 1 and s != UNLABELED]
+    if once and len(turns) > len(counts):
+        lines.append(
+            f"Check: {', '.join(once)} speak(s) only once. If a label is not a "
+            "person (like 'Note: ...'), reword that line or use --single-speaker."
+        )
+    return "\n".join(lines)
 
 
 def assign_voices(
@@ -143,6 +185,11 @@ def main() -> None:
         help="Print the voices for --language (country, gender, age) and exit",
     )
     parser.add_argument(
+        "--single-speaker",
+        action="store_true",
+        help="Read the whole text in one voice, treating 'Label:' as plain text",
+    )
+    parser.add_argument(
         "--pause", type=float, default=0.6, help="Seconds of silence between turns"
     )
     args = parser.parse_args()
@@ -159,7 +206,7 @@ def main() -> None:
     pause = np.zeros(int(args.pause * tts.sample_rate), dtype=np.float32)
     args.output_path.mkdir(parents=True, exist_ok=True)
     for transcript in args.transcripts:
-        turns = parse_transcript(transcript.read_text("utf-8"))
+        turns = parse_transcript(transcript.read_text("utf-8"), args.single_speaker)
         voices = assign_voices([s for s, _ in turns], args.language, overrides)
         parts = []
         for speaker, line in turns:
@@ -168,7 +215,8 @@ def main() -> None:
         audio = np.concatenate(parts)
         out = args.output_path / f"{transcript.stem}.mp3"
         out.write_bytes(to_mp3(audio, tts.sample_rate))
-        print(f"Wrote {out} ({len(audio) / tts.sample_rate:.0f} seconds)\n")
+        print(f"Wrote {out} ({len(audio) / tts.sample_rate:.0f} seconds)")
+        print(describe_speakers(turns) + "\n")
 
 
 if __name__ == "__main__":

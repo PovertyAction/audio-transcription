@@ -27,6 +27,10 @@ TTS (gated, CC BY-NC 4.0) in English, Spanish, or French and writes MP3s to
 `audio/demo/` (`--output-path` to change), for demos and tests. Voices come from
 the `gradium/phonon-voices` catalog: `--list-voices` prints name, country
 (locale), gender, and age for `--language`; `--voices SPEAKER=VOICE` picks them.
+After each MP3 it prints the speaker count and the matching
+`--diarize --num-speakers N` hint (`describe_speakers`, structure-only checks so
+it works in any language); `--single-speaker` reads labels as plain text in one
+voice.
 
 The project demonstrates transcription capabilities using three model families:
 

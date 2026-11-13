@@ -148,10 +148,16 @@ Interviewer: And how has saving each week gone for you?
 
 - Each line that starts with a label (`Interviewer:`, `SPEAKER_01:`, ...) starts
   a new turn. Lines without a label continue the previous turn.
+- Labels can be in any language or script: `ENQUÊTRICE : Bonjour` (French space
+  before the colon) and `采访者：你好` (full-width colon) both work. Times
+  (`10:30`) and links (`https://`) are not mistaken for labels.
 - Each speaker gets their own voice, in order of appearance, alternating female
   and male. To choose the country, gender, or a specific voice, see [Choose
   voices](#choose-voices-country-and-gender).
-- A file with no labels is read by a single voice.
+- **One speaker or several?** The number of different labels is the number of
+  speakers. A file with no labels is read by a single voice. To read a file in
+  one voice even though some lines look like labels (`Note: ...`), add
+  `--single-speaker`: the labels are then read aloud as plain text.
 
 A ready-made Spanish example lives in
 [`examples/entrevista_ficticia.md`](examples/entrevista_ficticia.md).
@@ -163,11 +169,29 @@ just generate-audio examples/entrevista_ficticia.md --language es
 ```
 
 This writes `audio/demo/entrevista_ficticia.mp3` (one MP3 per input file, named
-after it). Other options:
+after it). After each file, the script says how many speakers it heard and how
+to transcribe the result:
+
+```text
+Wrote audio/demo/entrevista_ficticia.mp3 (... seconds)
+2 speakers (ENTREVISTADORA, ENTREVISTADO): transcribe with --diarize --num-speakers 2.
+```
+
+A one-speaker file says `1 speaker: no diarization needed when transcribing.` If
+a label looks accidental, it adds a `Check:` line. This happens when text starts
+without a label but has labels later, or when a label is used only once while
+the other speakers talk several times (like `Note: ...` in the middle of a
+monologue). Reword that line, or rerun with `--single-speaker`. See [Speaker
+diarization](#speaker-diarization) for what `--diarize` does.
+
+Other options:
 
 ```bash
 # Several transcripts at once, into a different folder
 just generate-audio a.txt b.txt --language fr --output-path my-demo-audio
+
+# Read everything in one voice, even lines that look like "Label: text"
+just generate-audio monologue.txt --single-speaker
 
 # Longer pause between turns (seconds; default 0.6)
 just generate-audio script.md --pause 1.0
@@ -214,18 +238,26 @@ just generate-audio examples/entrevista_ficticia.md --language es --voices "ENTR
 just generate-audio script.md --voices "Interviewer=Hugh" "Respondent=Alfie"
 ```
 
-Speakers you don't name get the default voices.
+Speakers you don't name get the default voices. Text without labels (or any file
+read with `--single-speaker`) belongs to the speaker `SPEAKER`, so pick its
+voice with `--voices "SPEAKER=Alba"`.
 
 ### Transcribe it
 
 The CLI only reads the top level of its input folder, so point it at the demo
-folder:
+folder. Use the speaker summary from the step above: for the two-speaker
+example, add `--diarize --num-speakers 2` (diarization needs [Hugging Face
+access](#step-5-only-for-some-features-hugging-face-access)); for a one-speaker
+file, leave both flags out.
 
 ```bash
-uv run python src/transcribe_audio.py --input-path audio/demo --language es
+uv run python src/transcribe_audio.py --input-path audio/demo --language es --diarize --num-speakers 2
 ```
 
-Or upload the MP3 in the [web app](#use-the-web-app).
+`--num-speakers` applies to every file in the folder, so keep files with
+different speaker counts in separate folders (or leave it out to let pyannote
+guess). In the [web app](#use-the-web-app), upload the MP3 and switch on
+**Multiple speakers (diarization)** with the same number of speakers.
 
 ## Use the web app
 

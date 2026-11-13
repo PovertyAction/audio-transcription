@@ -5,6 +5,7 @@ import pytest
 
 from src.generate_audio import (
     assign_voices,
+    describe_speakers,
     format_voices,
     parse_transcript,
     to_mp3,
@@ -64,3 +65,57 @@ def test_format_voices_filters_language_and_sorts_by_country():
     assert lines[0].split() == ["NAME", "COUNTRY", "GENDER", "AGE"]
     assert [line.split()[0] for line in lines[1:]] == ["Bot", "Lucía", "Lalo"]
     assert lines[1].split()[2] == "-"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "ENQUÊTRICE : Bonjour.",  # French space before colon
+        "ENQUÊTRICE : Bonjour.",  # no-break space
+        "ENQUÊTRICE : Bonjour.",  # narrow no-break space
+        "L’ENQUÊTRICE: Bonjour.",  # typographic apostrophe
+        "采访者：你好。",  # full-width colon, no space
+    ],
+)
+def test_labels_in_other_languages(line):
+    """Labels are recognized across scripts and colon conventions."""
+    ((speaker, text),) = parse_transcript(line)
+    assert speaker != "SPEAKER" and ":" not in speaker and "：" not in speaker
+    assert text in {"Bonjour.", "你好。"}
+
+
+def test_times_and_urls_are_not_labels():
+    """Things like 10:30 or https:// do not start a turn."""
+    turns = parse_transcript("Hola.\nA las 10:30 llegamos.\nVer https://ipa.org")
+    assert len(turns) == 1
+
+
+def test_single_speaker_keeps_labels_as_text():
+    """--single-speaker reads everything, labels included, in one voice."""
+    assert parse_transcript("Nota: traer recibos.\nGracias.", True) == [
+        ("SPEAKER", "Nota: traer recibos. Gracias.")
+    ]
+
+
+def test_describe_one_speaker():
+    """One speaker needs no diarization."""
+    assert "no diarization" in describe_speakers([("SPEAKER", "Hola.")])
+
+
+def test_describe_interview_suggests_diarize():
+    """Several alternating speakers suggest --diarize with the count, no warnings."""
+    turns = parse_transcript("A: Hola.\nB: Hola.\nA: ¿Cómo está?\nB: Bien.")
+    summary = describe_speakers(turns)
+    assert "--diarize --num-speakers 2" in summary and "Check" not in summary
+
+
+def test_describe_flags_accidental_label_in_monologue():
+    """A 'Nota:' line inside an unlabeled monologue is flagged (any language)."""
+    turns = parse_transcript("Hoy hablamos del ahorro.\nNota: traer recibos.\nFin.")
+    assert "--single-speaker" in describe_speakers(turns)
+
+
+def test_describe_flags_label_used_once():
+    """A label used once among recurring speakers is flagged."""
+    turns = parse_transcript("A: Hola.\nB: Hola.\nRemarque: pause.\nA: Bien.")
+    assert "Remarque speak(s) only once" in describe_speakers(turns)
