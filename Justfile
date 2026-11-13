@@ -59,6 +59,10 @@ venv:
     uv tool install pre-commit
     uv run pre-commit install
 
+# log in to Hugging Face (needed once for gated models: cohere, pyannote, phonon)
+hf-login *ARGS:
+    uv run hf auth login {{ARGS}}
+
 # launch jupyter lab
 lab:
     uv run jupyter lab
