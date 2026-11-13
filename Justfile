@@ -68,8 +68,8 @@ lab:
     uv run jupyter lab
 
 # launch the Streamlit transcription app
-app:
-    uv run streamlit run src/app.py
+app *ARGS:
+    uv run streamlit run src/app.py {{ARGS}}
 
 # speak a fictitious transcript as MP3 in audio/demo/ (e.g. just generate-audio script.md --language es)
 # Positional arguments keep values with spaces intact, e.g. --voices "Dr. Ruiz=Easton"

@@ -11,3 +11,9 @@ textColor = "#414042"                # Charcoal
 borderColor = "#c9c9c8"              # Dark Gray
 font = "Arial, sans-serif"
 headingFont = "Georgia, serif"
+
+# Streamlit's auto-reload watcher touches every transformers lazy module, and
+# the vision ones log "No module named 'torchvision'" tracebacks. For live
+# reload while editing app.py: just app --server.fileWatcherType auto
+[server]
+fileWatcherType = "none"
