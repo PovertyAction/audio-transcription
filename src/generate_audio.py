@@ -104,6 +104,14 @@ def describe_speakers(turns: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def duplicate_stems(transcripts: list[Path]) -> list[str]:
+    """Find inputs that would write the same MP3 (e.g. a/x.txt and b/X.md)."""
+    by_stem: dict[str, list[str]] = {}
+    for path in dict.fromkeys(transcripts):  # the same file twice is fine
+        by_stem.setdefault(path.stem.lower(), []).append(str(path))
+    return [", ".join(paths) for paths in by_stem.values() if len(paths) > 1]
+
+
 def assign_voices(
     speakers: list[str], language: str, overrides: dict[str, str] | None = None
 ) -> dict[str, str]:
@@ -198,6 +206,11 @@ def main() -> None:
         return
     if not args.transcripts:
         parser.error("give at least one transcript file (or use --list-voices)")
+    if clashes := duplicate_stems(args.transcripts):
+        parser.error(
+            "these transcripts would write the same MP3, rename one or run them "
+            "separately: " + "; ".join(clashes)
+        )
     overrides = dict(v.split("=", 1) for v in args.voices)
 
     import ptts  # loaded here so --help and tests need no model
@@ -207,6 +220,9 @@ def main() -> None:
     args.output_path.mkdir(parents=True, exist_ok=True)
     for transcript in args.transcripts:
         turns = parse_transcript(transcript.read_text("utf-8"), args.single_speaker)
+        if not turns:
+            print(f"Skipped {transcript}: no text to speak.\n")
+            continue
         voices = assign_voices([s for s, _ in turns], args.language, overrides)
         parts = []
         for speaker, line in turns:

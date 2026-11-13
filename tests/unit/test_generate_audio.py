@@ -1,11 +1,14 @@
 """Tests for parsing transcripts and assigning voices in generate_audio."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from src.generate_audio import (
     assign_voices,
     describe_speakers,
+    duplicate_stems,
     format_voices,
     parse_transcript,
     to_mp3,
@@ -119,3 +122,15 @@ def test_describe_flags_label_used_once():
     """A label used once among recurring speakers is flagged."""
     turns = parse_transcript("A: Hola.\nB: Hola.\nRemarque: pause.\nA: Bien.")
     assert "Remarque speak(s) only once" in describe_speakers(turns)
+
+
+def test_duplicate_stems_detects_clashing_outputs():
+    """Different files with the same stem clash; the same file twice does not."""
+    files = [Path("a/interview.txt"), Path("b/Interview.md"), Path("c/other.txt")]
+    assert duplicate_stems(files) == [str(files[0]) + ", " + str(files[1])]
+    assert duplicate_stems([Path("x.txt"), Path("x.txt")]) == []
+
+
+def test_headings_only_transcript_has_no_turns():
+    """Empty or heading-only files give no turns, so they are skipped."""
+    assert parse_transcript("# Title\n\n# Notes\n") == []

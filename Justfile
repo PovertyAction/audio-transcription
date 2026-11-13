@@ -68,8 +68,20 @@ app:
     uv run streamlit run src/app.py
 
 # speak a fictitious transcript as MP3 in audio/demo/ (e.g. just generate-audio script.md --language es)
+# Positional arguments keep values with spaces intact, e.g. --voices "Dr. Ruiz=Easton"
+[unix]
+[positional-arguments]
 generate-audio *ARGS:
-    uv run python src/generate_audio.py {{ARGS}}
+    uv run python src/generate_audio.py "$@"
+
+# speak a fictitious transcript as MP3 in audio/demo/ (e.g. just generate-audio script.md --language es)
+[windows]
+[positional-arguments]
+[script("powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")]
+[extension(".ps1")]
+generate-audio *ARGS:
+    uv run python src/generate_audio.py @args
+    exit $LASTEXITCODE
 
 # Preview the quarto project
 preview-docs:
