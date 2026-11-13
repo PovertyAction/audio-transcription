@@ -165,4 +165,7 @@ cython_debug/
 audio/*.mp3
 audio/*.m4a
 audio/*.wav
+audio/demo/
+demo-audio/
+demo-output/
 output/

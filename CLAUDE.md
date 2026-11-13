@@ -21,6 +21,11 @@ The workflow has two entry points:
   in the app. GUI results are session-only downloads and are never appended to
   `output/transcribed_audio.*`.
 
+A helper, `src/generate_audio.py` (`just generate-audio`), goes the other way:
+it speaks a fictitious written transcript (`SPEAKER: text` lines) with Phonon
+TTS (gated, CC BY-NC 4.0) in English, Spanish, or French and writes MP3s to
+`audio/demo/` (`--output-path` to change), for demos and tests.
+
 The project demonstrates transcription capabilities using three model families:
 
 - **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription

@@ -314,6 +314,35 @@ Tips:
 - Files already transcribed without diarization are skipped by ID --- add
   `--all-audio` to re-run them with speaker labels.
 
+### Generate Demo Audio from a Transcript
+
+`src/generate_audio.py` turns a written, fictitious transcript into an MP3 with
+computer voices, so you can demo or test transcription without real recordings.
+It uses [Phonon](https://huggingface.co/gradium/phonon-40m-multilingual) on the
+CPU, in English, Spanish (Mexican voices), or French.
+
+```text
+Interviewer: How long have you been in the savings group?
+Respondent: About a year. My neighbor invited me.
+```
+
+Each line starting with a speaker label starts a turn; other lines continue it.
+Text with no labels is read by one voice. Each speaker gets its own voice,
+alternating female and male.
+
+```bash
+# One MP3 per transcript, written to audio/demo/ by default
+just generate-audio script.md --language es
+
+# Choose the folder and the voices (names from hf.co/gradium/phonon-voices)
+uv run python src/generate_audio.py a.txt b.txt --language fr \
+  --output-path tmp/audio --voices "Enquêtrice=Coralie" "Répondant=Lucien"
+```
+
+Phonon is a gated model: accept its terms on Hugging Face and log in once (see
+above). The weights and voices are licensed CC BY-NC 4.0, non-commercial use
+only. Use it for fictitious scripts, never to imitate a real person.
+
 ### Output Formats
 
 Save your transcriptions in multiple formats:

@@ -67,6 +67,10 @@ lab:
 app:
     uv run streamlit run src/app.py
 
+# speak a fictitious transcript as MP3 in audio/demo/ (e.g. just generate-audio script.md --language es)
+generate-audio *ARGS:
+    uv run python src/generate_audio.py {{ARGS}}
+
 # Preview the quarto project
 preview-docs:
     quarto preview
