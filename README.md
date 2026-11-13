@@ -1,6 +1,6 @@
 # Audio Transcription Project
 
-Turn audio recordings into text on your own machine. Pick from OpenAI Whisper,
+Turn audio recordings into text on your own computer. Pick from OpenAI Whisper,
 Mistral Voxtral, and Cohere Transcribe models, and optionally label who said
 what (speaker diarization with pyannote). Everything runs locally: after the
 models download once, no audio or transcript leaves your computer.
