@@ -109,7 +109,7 @@ For each one you want to use:
 3. Log in once on your machine and paste the token when asked:
 
    ```bash
-   uv run hf auth login
+   just hf-login
    ```
 
 Check with `uv run hf auth whoami`. You only do this once per machine.
@@ -457,7 +457,7 @@ cached and run offline.
 
    ```bash
    # Option A: log in once; the token is saved for future runs
-   uv run hf auth login
+   just hf-login
 
    # Option B: set the token for the current terminal session only
    $env:HF_TOKEN = "hf_..."   # PowerShell
