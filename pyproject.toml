@@ -14,10 +14,12 @@ dependencies = [
     "ipykernel>=6.29.5",
     "jupyter>=1.1.1",
     "jupytext>=1.17.2",
+    "lameenc>=1.9.0",
     "librosa>=0.11.0",
     "mistral-common[audio]>=1.11.5",
     "pandas>=2.2.3",
     "polars>=1.17.1",
+    "ptts>=0.7.0",
     "pyannote-audio>=4.0",
     "pyarrow>=21.0.0",
     "requests>=2.32",
@@ -118,5 +120,5 @@ markers = [
 
 [tool.codespell]
 builtin = "clear,rare,informal,usage,code,names"
-ignore-words-list = "jupyter,ipa"
+ignore-words-list = "jupyter,ipa,hace,aldo,que,mis"
 skip = "uv.lock"

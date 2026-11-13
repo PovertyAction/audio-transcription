@@ -21,6 +21,17 @@ The workflow has two entry points:
   in the app. GUI results are session-only downloads and are never appended to
   `output/transcribed_audio.*`.
 
+A helper, `src/generate_audio.py` (`just generate-audio`), goes the other way:
+it speaks a fictitious written transcript (`SPEAKER: text` lines) with Phonon
+TTS (gated, CC BY-NC 4.0) in English, Spanish, or French and writes MP3s to
+`audio/demo/` (`--output-path` to change), for demos and tests. Voices come from
+the `gradium/phonon-voices` catalog: `--list-voices` prints name, country
+(locale), gender, and age for `--language`; `--voices SPEAKER=VOICE` picks them.
+After each MP3 it prints the speaker count and the matching
+`--diarize --num-speakers N` hint (`describe_speakers`, structure-only checks so
+it works in any language); `--single-speaker` reads labels as plain text in one
+voice.
+
 The project demonstrates transcription capabilities using three model families:
 
 - **Whisper** (OpenAI): `openai/whisper-small` for fast, accurate transcription
@@ -137,7 +148,6 @@ Development uses `just` for command automation. Key commands:
 # Environment setup
 just get-started          # Install software and create venv
 just venv                 # Create/sync virtual environment
-just activate-venv        # Activate environment (uv shell)
 
 # Transcription with custom paths
 python src/transcribe_audio.py --input-path /custom/audio --output-path /custom/results
