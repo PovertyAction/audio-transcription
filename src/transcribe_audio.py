@@ -575,7 +575,7 @@ def transcribe_audio(
                 feature_extractor=processor.feature_extractor,
                 chunk_length_s=30,
                 batch_size=8 if device == "cuda" else 2,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                dtype=torch.float16 if device == "cuda" else torch.float32,
                 device=device,
             )
             generate_kwargs = {}
@@ -829,7 +829,7 @@ def transcribe_whisper_with_timestamps(
         feature_extractor=processor.feature_extractor,
         chunk_length_s=30 if chunked else None,
         batch_size=(8 if device == "cuda" else 2) if chunked else 1,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        dtype=torch.float16 if device == "cuda" else torch.float32,
         device=device,
         return_timestamps=True,
     )
